@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:api": "node --test \"apps-script/test/*.test.mjs\""
   },
   "dependencies": {
     "clsx": "^2.1.1",

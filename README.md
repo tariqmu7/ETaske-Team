@@ -14,7 +14,15 @@ npm install
 cp .env.example .env.local   # fill in the two public values
 npm run dev
 npm run lint                 # type-check (also catches a missing Arabic string)
+npm run test:api             # back-end tests: apps-script/Code.gs against in-memory Google fakes
 ```
+
+## Back end
+
+`apps-script/Code.gs` + `apps-script/appsscript.json` are pasted into the Apps Script editor
+of the data Sheet (Extensions → Apps Script). Run `setup()` once, then deploy as a web app
+(*Execute as: me*, *Who has access: Anyone*). The answer format and every action are in
+[docs/DESIGN.md](docs/DESIGN.md) §4.
 
 ## Deploy
 
