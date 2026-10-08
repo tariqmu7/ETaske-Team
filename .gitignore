@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Team data lives in Google Drive only. Never commit exports of it.
+backups/
+*.xlsx
+*.csv
+scripts/harness/*.png
