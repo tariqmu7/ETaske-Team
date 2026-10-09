@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, CalendarCheck, CloudOff, ListChecks, MessageSquare, Users } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, CloudOff, Images, ListChecks, MessageSquare, Users } from 'lucide-react';
 import { useProjectSync } from '../hooks/useProjectSync';
 import type { Session } from '../hooks/useSession';
 import { useVisibleInterval } from '../hooks/useVisibleInterval';
@@ -9,12 +9,14 @@ import { errorText } from '../lib/errors';
 import { localDay } from '../lib/format';
 import type { Member, Project as ProjectInfo, User } from '../types';
 import { ProjectChat } from './ProjectChat';
+import { ProjectFiles } from './ProjectFiles';
+import { ProjectPeople } from './ProjectPeople';
 import { ProjectTasks } from './ProjectTasks';
 import { ProjectUpdates } from './ProjectUpdates';
 
 const MEMBERS_EVERY_MS = 2 * 60 * 1000;
 
-const TABS = ['chat', 'tasks', 'updates'] as const;
+const TABS = ['chat', 'tasks', 'updates', 'files', 'people'] as const;
 export type ProjectTab = (typeof TABS)[number];
 export const isProjectTab = (x: string | undefined): x is ProjectTab => (TABS as readonly string[]).includes(x ?? '');
 
@@ -28,8 +30,8 @@ interface Props {
 }
 
 /**
- * One project: Chat, Tasks and daily Updates as tabs over one shared sync
- * (Files and People join in task 7b). Mount with `key={projectId}`.
+ * One project: Chat, Tasks, daily Updates, Files and People as tabs over one
+ * shared sync. Mount with `key={projectId}`.
  */
 export function Project({ projectId, tab, onTab, me, call, onBack }: Props) {
   const { t } = useTranslation();
@@ -117,6 +119,8 @@ export function Project({ projectId, tab, onTab, me, call, onBack }: Props) {
           badge={myOpenTasks > 0 ? { text: String(myOpenTasks), title: t('Your open tasks: {{count}}', { count: myOpenTasks }) } : undefined} />
         <TabButton id="updates" tab={tab} onTab={onTab} icon={<CalendarCheck />} label={t('Updates')}
           dot={owesUpdate ? t('You have not posted your update today') : undefined} />
+        <TabButton id="files" tab={tab} onTab={onTab} icon={<Images />} label={t('Files')} />
+        <TabButton id="people" tab={tab} onTab={onTab} icon={<Users />} label={t('People')} />
       </div>
 
       {firstLoadFailed ? (
@@ -127,6 +131,10 @@ export function Project({ projectId, tab, onTab, me, call, onBack }: Props) {
         </div>
       ) : tab === 'tasks' ? (
         <ProjectTasks projectId={projectId} me={me} call={call} sync={sync} members={members} people={people} isLead={isLead} archived={archived} />
+      ) : tab === 'files' ? (
+        <ProjectFiles sync={sync} people={people} folderId={info?.folderId ?? ''} />
+      ) : tab === 'people' ? (
+        <ProjectPeople projectId={projectId} me={me} call={call} sync={sync} members={members} reloadMembers={loadMembers} isLead={isLead} archived={archived} />
       ) : tab === 'updates' ? (
         <ProjectUpdates projectId={projectId} me={me} call={call} sync={sync} members={members} people={people} archived={archived} />
       ) : (

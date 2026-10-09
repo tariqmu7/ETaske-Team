@@ -15,7 +15,7 @@ const PENDING_CHECK_MS = 60 * 1000;
 
 interface Place { route: Route; projectId: string; tab: ProjectTab }
 
-/** `#/users`, `#/p/<project id>[/tasks|/updates]`, anything else = the projects list. */
+/** `#/users`, `#/p/<project id>[/tasks|/updates|/files|/people]`, anything else = the projects list. */
 function placeFromHash(): Place {
   const hash = window.location.hash;
   if (hash === '#/users') return { route: 'users', projectId: '', tab: 'chat' };

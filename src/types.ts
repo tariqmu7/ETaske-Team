@@ -43,6 +43,8 @@ export interface Member {
   name: string;
   photoUrl: string;
   status: UserStatus | '';
+  /** Drive sharing problems after add; the Sheet change still stands. */
+  warnings?: string[];
 }
 
 export type TaskStatus = 'todo' | 'doing' | 'blocked' | 'done';
