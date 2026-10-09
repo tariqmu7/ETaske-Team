@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarCheck, Check, FileText, ImagePlus, Loader2, Pencil, X } from 'lucide-react';
+import { CalendarCheck, CalendarClock, Check, FileText, ImagePlus, Loader2, MessageSquareText, Pencil, X } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
 import { ChatImage, FileChip } from '../components/FileViews';
 import { useLanguage } from '../hooks/useLanguage';
@@ -8,9 +8,10 @@ import type { Session } from '../hooks/useSession';
 import type { useProjectSync } from '../hooks/useProjectSync';
 import { errorText } from '../lib/errors';
 import { MAX_FILE_BYTES, formatSize, shrinkImage, toBase64 } from '../lib/files';
-import { clockTime, dayLabel, displayName, localDay } from '../lib/format';
-import { MAX_TASK_TEXT, compareTasks, taskStatusLabel } from '../lib/tasks';
-import type { DailyUpdate, FileItem, Member, Task, User } from '../types';
+import { MAX_FOLLOWUP, nextFollowUps } from '../lib/followups';
+import { clockTime, dayLabel, displayName, localDay, shortDate } from '../lib/format';
+import { MAX_TASK_TEXT, TASK_STATUSES, canEditTask, compareTasks, taskStatusLabel } from '../lib/tasks';
+import type { DailyUpdate, FileItem, FollowUp, Member, Task, TaskStatus, User } from '../types';
 
 type Sync = ReturnType<typeof useProjectSync>;
 
@@ -24,13 +25,14 @@ interface Props {
   sync: Sync;
   members: Member[];
   people: Map<string, { name: string; photoUrl: string }>;
+  isLead: boolean;
   archived: boolean;
 }
 
 class TooBig extends Error {}
 
 /** Daily "what I did / what is left / what blocks me": today's form, who has not posted, the team's feed by day. */
-export function ProjectUpdates({ projectId, me, call, sync, members, people, archived }: Props) {
+export function ProjectUpdates({ projectId, me, call, sync, members, people, isLead, archived }: Props) {
   const { t } = useTranslation();
   const { lang } = useLanguage();
   const myEmail = me.email.toLowerCase();
@@ -39,6 +41,17 @@ export function ProjectUpdates({ projectId, me, call, sync, members, people, arc
 
   const fileById = useMemo(() => new Map(sync.files.map((f) => [f.id, f])), [sync.files]);
   const taskById = useMemo(() => new Map(sync.tasks.map((x) => [x.id, x])), [sync.tasks]);
+  // Notes a person wrote on a task from their update: shown under that task on the day's card.
+  const notesByDay = useMemo(() => {
+    const map = new Map<string, FollowUp[]>();
+    for (const f of sync.followUps) {
+      if (f.deleted) continue;
+      const key = `${f.taskId}|${f.authorEmail.toLowerCase()}|${localDay(f.createdAt)}`;
+      map.set(key, [...(map.get(key) ?? []), f]);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return map;
+  }, [sync.followUps]);
   const mine = sync.updates.find((u) => u.date === today && u.authorEmail.toLowerCase() === myEmail) ?? null;
 
   const postedToday = useMemo(() => new Set(sync.updates.filter((u) => u.date === today).map((u) => u.authorEmail.toLowerCase())), [sync.updates, today]);
@@ -65,7 +78,8 @@ export function ProjectUpdates({ projectId, me, call, sync, members, people, arc
           projectId={projectId}
           call={call}
           sync={sync}
-          myEmail={myEmail}
+          me={me}
+          isLead={isLead}
           today={today}
           existing={mine}
           fileById={fileById}
@@ -143,8 +157,16 @@ export function ProjectUpdates({ projectId, me, call, sync, members, people, arc
                   <ul className="update-tasks">
                     {tasks.map((x) => (
                       <li key={x.id}>
-                        <span className="ltr-data" style={{ fontWeight: 700 }}>{x.serial}</span> · <bdi>{x.title}</bdi>
-                        <span className="text-muted"> · {taskStatusLabel(t, x.status)} <span className="ltr-data">{x.percent}%</span></span>
+                        <div>
+                          <span className="ltr-data" style={{ fontWeight: 700 }}>{x.serial}</span> · <bdi>{x.title}</bdi>
+                          <span className="text-muted"> · {taskStatusLabel(t, x.status)} <span className="ltr-data">{x.percent}%</span></span>
+                        </div>
+                        {(notesByDay.get(`${x.id}|${author}|${u.date}`) ?? []).map((f) => (
+                          <div key={f.id} className="update-task-note">
+                            <span dir="auto">{f.note}</span>
+                            {f.nextDate && <span className="text-muted"> · {t('Next: {{date}}', { date: shortDate(f.nextDate, lang) })}</span>}
+                          </div>
+                        ))}
                       </li>
                     ))}
                   </ul>
@@ -177,7 +199,8 @@ interface FormProps {
   projectId: string;
   call: Session['call'];
   sync: Sync;
-  myEmail: string;
+  me: User;
+  isLead: boolean;
   today: string;
   existing: DailyUpdate | null;
   fileById: Map<string, FileItem>;
@@ -185,9 +208,25 @@ interface FormProps {
   onCancel?: () => void;
 }
 
-/** Today's update. Posting again for the same day replaces it (the server keeps one per person per day). */
-function UpdateForm({ projectId, call, sync, myEmail, today, existing, fileById, onDone, onCancel }: FormProps) {
+/** What the update changes on one ticked task. `from*` = the values when the row was first touched. */
+interface TaskEdit {
+  status: TaskStatus;
+  percent: number;
+  note: string;
+  nextDate: string;
+  fromStatus: TaskStatus;
+  fromPercent: number;
+  fromNextDate: string;
+}
+
+/**
+ * Today's update. Posting again for the same day replaces it (the server keeps one per person per day).
+ * Each ticked task can also get a new status / % (sent as updateTask) and a note (saved as a follow-up).
+ */
+function UpdateForm({ projectId, call, sync, me, isLead, today, existing, fileById, onDone, onCancel }: FormProps) {
   const { t } = useTranslation();
+  const { lang } = useLanguage();
+  const myEmail = me.email.toLowerCase();
   const [done, setDone] = useState(existing?.done ?? '');
   const [remaining, setRemaining] = useState(existing?.remaining ?? '');
   const [blockers, setBlockers] = useState(existing?.blockers ?? '');
@@ -200,6 +239,10 @@ function UpdateForm({ projectId, call, sync, myEmail, today, existing, fileById,
   const picker = useRef<HTMLInputElement>(null);
   /** Files already uploaded in an earlier failed attempt, so "try again" does not send them twice. */
   const uploaded = useRef(new Map<File, FileItem>());
+  /** Task notes already saved in an earlier failed attempt, so "try again" does not add them twice. */
+  const sentNotes = useRef(new Set<string>());
+  const [edits, setEdits] = useState<Record<string, TaskEdit>>({});
+  const pendingFollowUps = useMemo(() => nextFollowUps(sync.followUps, sync.tasks), [sync.followUps, sync.tasks]);
 
   // My open tasks, plus any already linked (even if done since).
   const myTasks = useMemo(() => {
@@ -209,6 +252,19 @@ function UpdateForm({ projectId, call, sync, myEmail, today, existing, fileById,
       .sort((a, b) => compareTasks(a, b, today));
     // `taskIds` is left out on purpose: ticking or unticking must not make a row jump or vanish.
   }, [sync.tasks, myEmail, today]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Untouched rows follow the live task; a row is frozen once changed, so a later sync cannot undo the edit.
+  const startEdit = (x: Task): TaskEdit => {
+    const pending = pendingFollowUps.get(x.id) ?? '';
+    const nextDate = pending >= today ? pending : '';
+    return { status: x.status, percent: x.percent, note: '', nextDate, fromStatus: x.status, fromPercent: x.percent, fromNextDate: nextDate };
+  };
+  const editOf = (x: Task) => edits[x.id] ?? startEdit(x);
+  const setEdit = (x: Task, patch: Partial<TaskEdit>) => setEdits((all) => {
+    const next = { ...(all[x.id] ?? startEdit(x)), ...patch };
+    if (patch.status === 'done') next.percent = 100;
+    return { ...all, [x.id]: next };
+  });
 
   const toggleTask = (id: string) => setTaskIds((list) => (list.includes(id) ? list.filter((x) => x !== id) : list.length < MAX_LIST ? [...list, id] : list));
 
@@ -227,6 +283,14 @@ function UpdateForm({ projectId, call, sync, myEmail, today, existing, fileById,
     e.preventDefault();
     if (!done.trim() && !remaining.trim() && !blockers.trim()) {
       setError(t('Write what you did, what is left, or what is blocking you.'));
+      return;
+    }
+    const undated = myTasks.find((x) => {
+      const ed = edits[x.id];
+      return taskIds.includes(x.id) && ed && !ed.note.trim() && ed.nextDate !== ed.fromNextDate;
+    });
+    if (undated) {
+      setError(t('{{serial}}: write a note to set the next follow-up day.', { serial: undated.serial }));
       return;
     }
     setSaving(true);
@@ -249,6 +313,25 @@ function UpdateForm({ projectId, call, sync, myEmail, today, existing, fileById,
         ids.push(item.id);
       }
       setProgress(null);
+      // Task changes first, so the update card shows the new status and %.
+      for (const id of taskIds) {
+        const ed = edits[id];
+        const live = sync.tasks.find((x) => x.id === id);
+        if (!ed || !live) continue;
+        // Send only what this person changed, and only if it is not already so (a retry, or someone else did it).
+        const change: { status?: TaskStatus; percent?: number } = {};
+        if (canEditTask(live, me, isLead)) {
+          if (ed.status !== ed.fromStatus && ed.status !== live.status) change.status = ed.status;
+          if (ed.status !== 'done' && ed.percent !== ed.fromPercent && ed.percent !== live.percent) change.percent = ed.percent;
+        }
+        if (change.status || change.percent !== undefined) sync.putTask(await call<Task>('updateTask', { projectId, taskId: id, ...change }));
+        const note = ed.note.trim();
+        const key = `${id}\n${note}\n${ed.nextDate}`;
+        if (note && !sentNotes.current.has(key)) {
+          sync.putFollowUp(await call<FollowUp>('addFollowUp', { projectId, taskId: id, note, nextDate: ed.nextDate }));
+          sentNotes.current.add(key);
+        }
+      }
       const saved = await call<DailyUpdate>('postUpdate', {
         projectId, date: today, done: done.trim(), remaining: remaining.trim(), blockers: blockers.trim(), taskIds, fileIds: ids,
       });
@@ -258,7 +341,10 @@ function UpdateForm({ projectId, call, sync, myEmail, today, existing, fileById,
       setProgress(null);
       setError(err instanceof TooBig
         ? t('{{name}} is too big. The limit is 15 MB per file.', { name: err.message })
-        : errorText(t, err, { NOT_FOUND: t('A task or file you linked was removed. Untick it and try again.') }));
+        : errorText(t, err, {
+          NOT_FOUND: t('A task or file you linked was removed. Untick it and try again.'),
+          FORBIDDEN: t('You can no longer change one of the ticked tasks. Put its status and % back and try again.'),
+        }));
       setSaving(false);
     }
   };
@@ -279,13 +365,61 @@ function UpdateForm({ projectId, call, sync, myEmail, today, existing, fileById,
       {myTasks.length > 0 && (
         <fieldset className="update-form-tasks">
           <legend className="input-label">{t('Tasks you worked on (optional)')}</legend>
-          {myTasks.map((x) => (
-            <label key={x.id} className={`check-chip${taskIds.includes(x.id) ? ' on' : ''}`}>
-              <input type="checkbox" checked={taskIds.includes(x.id)} onChange={() => toggleTask(x.id)} />
-              <span className="ltr-data" style={{ fontWeight: 700 }}>{x.serial}</span>
-              <bdi className="text-truncate">{x.title}</bdi>
-            </label>
-          ))}
+          <p className="text-muted update-form-hint">{t('Tick a task to change its status and % or add a note. The task is updated when you post.')}</p>
+          {myTasks.map((x) => {
+            const on = taskIds.includes(x.id);
+            const ed = editOf(x);
+            const editable = canEditTask(x, me, isLead);
+            const base = `uf-${x.id}`;
+            return (
+              <div key={x.id} className={`uf-task${on ? ' on' : ''}`}>
+                <label className={`check-chip${on ? ' on' : ''}`}>
+                  <input type="checkbox" checked={on} onChange={() => toggleTask(x.id)} disabled={saving} />
+                  <span className="ltr-data" style={{ fontWeight: 700 }}>{x.serial}</span>
+                  <bdi className="text-truncate">{x.title}</bdi>
+                  {!on && <span className="uf-task-now text-muted">{taskStatusLabel(t, x.status)} <span className="ltr-data">{x.percent}%</span></span>}
+                </label>
+                {on && (
+                  <div className="uf-task-edit">
+                    {editable ? (
+                      <div className="uf-task-row">
+                        <div className="uf-task-status">
+                          <label className="input-label" htmlFor={`${base}-st`}>{t('Status')}</label>
+                          <select id={`${base}-st`} className="input" value={ed.status} disabled={saving}
+                            onChange={(e) => setEdit(x, { status: e.target.value as TaskStatus })}>
+                            {TASK_STATUSES.map((s) => <option key={s} value={s}>{taskStatusLabel(t, s)}</option>)}
+                          </select>
+                        </div>
+                        <div className="uf-task-percent">
+                          <label className="input-label" htmlFor={`${base}-pc`}>
+                            {t('Progress')} <span className="ltr-data" style={{ color: 'var(--text-primary)' }}>{ed.percent}%</span>
+                          </label>
+                          <input id={`${base}-pc`} type="range" min={0} max={100} step={5} value={ed.percent} className="task-range"
+                            disabled={saving || ed.status === 'done'} onChange={(e) => setEdit(x, { percent: Number(e.target.value) })} />
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+                        {taskStatusLabel(t, x.status)} <span className="ltr-data">{x.percent}%</span> · {t('Only the person assigned, the project lead or an admin can change its status.')}
+                      </p>
+                    )}
+                    <div className="uf-task-row">
+                      <div className="uf-task-note">
+                        <label className="input-label" htmlFor={`${base}-nt`}><MessageSquareText style={{ width: 13, height: 13 }} /> {t('Note on this task (saved in its follow-ups)')}</label>
+                        <textarea id={`${base}-nt`} className="input" dir="auto" rows={2} maxLength={MAX_FOLLOWUP} value={ed.note} disabled={saving}
+                          placeholder={t('What was done or agreed')} onChange={(e) => setEdit(x, { note: e.target.value })} />
+                      </div>
+                      <div className="uf-task-date">
+                        <label className="input-label" htmlFor={`${base}-nd`}><CalendarClock style={{ width: 13, height: 13 }} /> {t('Next follow-up (optional)')}</label>
+                        <input id={`${base}-nd`} type="date" className="input" dir="ltr" min={today} value={ed.nextDate} disabled={saving}
+                          onChange={(e) => setEdit(x, { nextDate: e.target.value })} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </fieldset>
       )}
 

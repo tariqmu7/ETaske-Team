@@ -136,7 +136,7 @@ export function Project({ projectId, tab, onTab, me, call, onBack }: Props) {
       ) : tab === 'people' ? (
         <ProjectPeople projectId={projectId} me={me} call={call} sync={sync} members={members} reloadMembers={loadMembers} isLead={isLead} archived={archived} />
       ) : tab === 'updates' ? (
-        <ProjectUpdates projectId={projectId} me={me} call={call} sync={sync} members={members} people={people} archived={archived} />
+        <ProjectUpdates projectId={projectId} me={me} call={call} sync={sync} members={members} people={people} isLead={isLead} archived={archived} />
       ) : (
         <ProjectChat projectId={projectId} me={me} call={call} sync={sync} members={members} archived={archived} />
       )}

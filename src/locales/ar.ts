@@ -344,6 +344,12 @@ const ar: Record<keyof typeof en, string> = {
   "Remove this follow-up": "احذف هذه المتابعة",
   "Only the person who wrote it, the project lead or an admin can remove a follow-up.": "لا يحذف المتابعة إلا كاتبها أو قائد المشروع أو مدير النظام.",
   "This follow-up was already removed.": "حُذفت هذه المتابعة من قبل.",
+  // Daily update linked to tasks
+  "Tick a task to change its status and % or add a note. The task is updated when you post.": "اختر مهمةً لتغيير حالتها ونسبة إنجازها أو لإضافة ملاحظة؛ وتُحدَّث المهمة عند نشر التحديث.",
+  "Only the person assigned, the project lead or an admin can change its status.": "لا يغيّر حالتها إلا المكلَّف بها أو قائد المشروع أو مدير النظام.",
+  "Note on this task (saved in its follow-ups)": "ملاحظة على المهمة (تُحفظ في متابعاتها)",
+  "{{serial}}: write a note to set the next follow-up day.": "{{serial}}: اكتب ملاحظةً لتحديد موعد المتابعة القادمة.",
+  "You can no longer change one of the ticked tasks. Put its status and % back and try again.": "لم يعد بوسعك تعديل إحدى المهام المختارة؛ أعِد حالتها ونسبتها كما كانتا ثم حاول مجددًا.",
 };
 
 export default ar;

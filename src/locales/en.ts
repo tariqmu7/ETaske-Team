@@ -343,6 +343,12 @@ const en = {
   "Remove this follow-up": "Remove this follow-up",
   "Only the person who wrote it, the project lead or an admin can remove a follow-up.": "Only the person who wrote it, the project lead or an admin can remove a follow-up.",
   "This follow-up was already removed.": "This follow-up was already removed.",
+  // Daily update linked to tasks
+  "Tick a task to change its status and % or add a note. The task is updated when you post.": "Tick a task to change its status and % or add a note. The task is updated when you post.",
+  "Only the person assigned, the project lead or an admin can change its status.": "Only the person assigned, the project lead or an admin can change its status.",
+  "Note on this task (saved in its follow-ups)": "Note on this task (saved in its follow-ups)",
+  "{{serial}}: write a note to set the next follow-up day.": "{{serial}}: write a note to set the next follow-up day.",
+  "You can no longer change one of the ticked tasks. Put its status and % back and try again.": "You can no longer change one of the ticked tasks. Put its status and % back and try again.",
 };
 
 export default en;
