@@ -2,17 +2,20 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { AlertCircle, ArrowDown, ClipboardList, Copy, FileText, Loader2, MoreHorizontal, Pencil, Reply, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowDown, ClipboardList, ClipboardPlus, Copy, FileText, Loader2, MoreHorizontal, Pencil, Reply, RotateCcw, Trash2 } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
 import { Composer, type Draft } from '../components/Composer';
 import { MessageText } from '../components/MessageText';
+import { TaskModal, type TaskSeed } from '../components/TaskModal';
 import { useLanguage } from '../hooks/useLanguage';
 import type { Session } from '../hooks/useSession';
 import type { useProjectSync } from '../hooks/useProjectSync';
 import { errorText } from '../lib/errors';
-import { MAX_FILE_BYTES, formatSize, isImageType, shrinkImage, toBase64 } from '../lib/files';
+import { ChatImage, FileChip } from '../components/FileViews';
+import { MAX_FILE_BYTES, shrinkImage, toBase64 } from '../lib/files';
+import { MAX_TASK_TITLE, taskStatusLabel } from '../lib/tasks';
 import { clockTime, dayLabel, displayName, localDay } from '../lib/format';
-import type { FileItem, Member, Message, TaskEvent, TaskStatus, User } from '../types';
+import type { FileItem, Member, Message, Task, TaskEvent, User } from '../types';
 
 /** Messages from one person this close together share one name + avatar. */
 const GROUP_MS = 5 * 60 * 1000;
@@ -34,16 +37,6 @@ interface Outgoing {
 }
 
 class TooBig extends Error {}
-
-export function taskStatusLabel(t: TFunction, s: TaskStatus | undefined): string {
-  switch (s) {
-    case 'todo': return t('To do');
-    case 'doing': return t('In progress');
-    case 'blocked': return t('Blocked (task status)');
-    case 'done': return t('Done');
-    default: return '';
-  }
-}
 
 /** A task line, worded in the reader's language from the event data. */
 function eventLines(t: TFunction, ev: TaskEvent, nameOf: (email: string) => string): string[] {
@@ -89,6 +82,7 @@ export function ProjectChat({ projectId, me, call, sync, members, archived }: Pr
   const [notice, setNotice] = useState('');
   const [newBelow, setNewBelow] = useState(0);
   const [flashId, setFlashId] = useState('');
+  const [taskSeed, setTaskSeed] = useState<TaskSeed | null>(null);
 
   const people = useMemo(() => {
     const map = new Map<string, { name: string; photoUrl: string }>();
@@ -282,6 +276,27 @@ export function ProjectChat({ projectId, me, call, sync, members, archived }: Pr
     navigator.clipboard?.writeText(m.text).catch(() => { /* nothing to copy to */ });
   };
 
+  /** "Make it a task": the first line becomes the title, the whole message the details. */
+  const makeTask = (m: Message) => {
+    setMenuFor('');
+    const text = m.text.trim();
+    const firstLine = text.split('\n')[0].trim();
+    const title = firstLine.length > MAX_TASK_TITLE ? `${firstLine.slice(0, MAX_TASK_TITLE - 1)}…` : firstLine;
+    const mentioned = m.mentions.map((e) => e.toLowerCase()).filter((e) => mentionable.some((p) => p.email.toLowerCase() === e));
+    setTaskSeed({
+      title,
+      details: text === firstLine ? '' : text,
+      assigneeEmail: mentioned.length === 1 ? mentioned[0] : '',
+      fromMessageId: m.id,
+    });
+  };
+
+  const onTaskCreated = (task: Task) => {
+    sync.putTask(task);
+    setTaskSeed(null);
+    void sync.sync();   // brings the "created a task" line, posted as a reply to the message
+  };
+
   const jumpTo = (id: string) => {
     const el = document.getElementById(`msg-${id}`);
     if (!el) return;
@@ -410,6 +425,7 @@ export function ProjectChat({ projectId, me, call, sync, members, archived }: Pr
             <div className="chat-actions" role="menu">
               {!archived && <button type="button" role="menuitem" onClick={() => { setReplyToId(m.id); setEditingId(''); setMenuFor(''); }}><Reply />{t('Reply')}</button>}
               {m.text && <button type="button" role="menuitem" onClick={() => copy(m)}><Copy />{t('Copy')}</button>}
+              {!archived && m.text.trim() && <button type="button" role="menuitem" onClick={() => makeTask(m)}><ClipboardPlus />{t('Make it a task')}</button>}
               {canEdit && <button type="button" role="menuitem" onClick={() => { setEditingId(m.id); setReplyToId(''); setMenuFor(''); }}><Pencil />{t('Edit')}</button>}
               {canDelete && <button type="button" role="menuitem" className="danger" onClick={() => void remove(m)}><Trash2 />{t('Delete')}</button>}
             </div>
@@ -510,29 +526,20 @@ export function ProjectChat({ projectId, me, call, sync, members, archived }: Pr
         onSaveEdit={saveEdit}
         onSend={send}
       />
+
+      {taskSeed && (
+        <TaskModal
+          projectId={projectId}
+          call={call}
+          members={members.filter((p) => p.status !== 'blocked')}
+          people={people}
+          task={null}
+          seed={taskSeed}
+          canEdit
+          onSaved={onTaskCreated}
+          onClose={() => setTaskSeed(null)}
+        />
+      )}
     </div>
   );
 }
-
-/** A photo through Drive's thumbnail; falls back to a file chip if Google will not show it. */
-function ChatImage({ file }: { file: FileItem }) {
-  const [broken, setBroken] = useState(false);
-  if (broken) return <FileChip file={file} />;
-  return (
-    <a href={file.url} target="_blank" rel="noopener noreferrer" className="chat-image" title={file.name}>
-      <img src={file.thumbnailUrl} alt={file.name} loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} />
-    </a>
-  );
-}
-
-function FileChip({ file }: { file: FileItem }) {
-  return (
-    <a href={file.url} target="_blank" rel="noopener noreferrer" className="chat-file-chip">
-      <FileText style={{ width: 16, height: 16, flexShrink: 0 }} />
-      <span className="text-truncate" dir="auto">{file.name}</span>
-      <span className="chat-file-size" dir="ltr">{isImageType(file.mimeType) ? '' : formatSize(file.size)}</span>
-    </a>
-  );
-}
-
-

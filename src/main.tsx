@@ -4,6 +4,7 @@ import App from './App.tsx';
 import {ErrorBoundary} from './ErrorBoundary.tsx';
 import './index.css';
 import './chat.css';
+import './project.css';
 import './i18n';
 import {registerAppServiceWorker} from './lib/pwa';
 

@@ -115,6 +115,8 @@ export function useProjectSync(projectId: string, call: Session['call']) {
   /** Puts my own new or changed rows on screen at once, before the next sync brings them. */
   const putMessage = useCallback((m: Message) => setData((d) => ({ ...d, messages: mergeById(d.messages, [m], messageStamp) })), []);
   const putFile = useCallback((f: FileItem) => setData((d) => ({ ...d, files: mergeById(d.files, [f], (x) => x.createdAt) })), []);
+  const putTask = useCallback((x: Task) => setData((d) => ({ ...d, tasks: mergeById(d.tasks, [x], (t) => t.updatedAt) })), []);
+  const putUpdate = useCallback((u: DailyUpdate) => setData((d) => ({ ...d, updates: mergeById(d.updates, [u], updateStamp) })), []);
 
   const loadOlder = useCallback(async () => {
     const oldest = data.messages[0];
@@ -129,5 +131,5 @@ export function useProjectSync(projectId: string, call: Session['call']) {
     }
   }, [call, projectId, data.messages, loadingOlder]);
 
-  return { ...data, loaded, error, sync, putMessage, putFile, loadOlder, loadingOlder };
+  return { ...data, loaded, error, sync, putMessage, putFile, putTask, putUpdate, loadOlder, loadingOlder };
 }

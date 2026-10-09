@@ -145,6 +145,6 @@ phone** in this version; unread badges in the app, and (optional, later) an e-ma
    variables ✅
 5. Screens: sign in, waiting, projects, admin approvals ✅
 6. Screen: chat (polling, mentions, photos/files) ✅
-7. Screens: tasks, updates, files, people
+7. Screens: tasks + daily updates (7a) ✅ · files + people (7b)
 8. Publish on Pages; live test with two Google accounts
 9. Short Arabic guide for the team

@@ -4,7 +4,7 @@ import { TopNav, type Route } from './components/TopNav';
 import { useSession } from './hooks/useSession';
 import { useVisibleInterval } from './hooks/useVisibleInterval';
 import { errorText } from './lib/errors';
-import { Project } from './screens/Project';
+import { Project, isProjectTab, type ProjectTab } from './screens/Project';
 import { Projects } from './screens/Projects';
 import { SignIn } from './screens/SignIn';
 import { UsersAdmin } from './screens/UsersAdmin';
@@ -13,14 +13,14 @@ import type { User } from './types';
 
 const PENDING_CHECK_MS = 60 * 1000;
 
-interface Place { route: Route; projectId: string }
+interface Place { route: Route; projectId: string; tab: ProjectTab }
 
-/** `#/users`, `#/p/<project id>`, anything else = the projects list. */
+/** `#/users`, `#/p/<project id>[/tasks|/updates]`, anything else = the projects list. */
 function placeFromHash(): Place {
   const hash = window.location.hash;
-  if (hash === '#/users') return { route: 'users', projectId: '' };
-  const m = hash.match(/^#\/p\/([\w-]+)$/);
-  return { route: 'projects', projectId: m ? m[1] : '' };
+  if (hash === '#/users') return { route: 'users', projectId: '', tab: 'chat' };
+  const m = hash.match(/^#\/p\/([\w-]+)(?:\/(\w+))?$/);
+  return { route: 'projects', projectId: m ? m[1] : '', tab: m && isProjectTab(m[2]) ? m[2] : 'chat' };
 }
 
 /**
@@ -32,7 +32,7 @@ export default function App() {
   const session = useSession();
   const { phase, user, call, signOut } = session;
   const [place, setPlace] = useState<Place>(placeFromHash);
-  const { route, projectId } = place;
+  const { route, projectId, tab } = place;
   const [pendingCount, setPendingCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
 
@@ -89,7 +89,17 @@ export default function App() {
   } else if (screen === 'users') {
     body = <UsersAdmin me={user} call={call} onUsers={onUsers} />;
   } else if (projectId) {
-    body = <Project key={projectId} projectId={projectId} me={user} call={call} onBack={() => navigate('projects')} />;
+    body = (
+      <Project
+        key={projectId}
+        projectId={projectId}
+        tab={tab}
+        onTab={(next) => { window.location.hash = next === 'chat' ? `#/p/${projectId}` : `#/p/${projectId}/${next}`; }}
+        me={user}
+        call={call}
+        onBack={() => navigate('projects')}
+      />
+    );
   } else {
     body = <Projects user={user} call={call} />;
   }

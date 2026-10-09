@@ -60,3 +60,12 @@ export function dayLabel(iso: string, lang: Language, words: { today: string; ye
 export function displayName(email: string, people: Map<string, { name: string }>): string {
   return people.get(email.toLowerCase())?.name || email.split('@')[0] || email;
 }
+
+/** A calendar day (YYYY-MM-DD) as "12 Oct", with the year only when it is not this year. */
+export function shortDate(ymd: string, lang: Language, now = Date.now()): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  if (!y || !m || !d) return ymd;
+  const date = new Date(y, m - 1, d);
+  const sameYear = y === new Date(now).getFullYear();
+  return new Intl.DateTimeFormat(localeFor(lang), { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) }).format(date);
+}
