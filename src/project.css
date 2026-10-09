@@ -375,3 +375,58 @@
 .update-task-pct { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .update-task-note { margin-top: 3px; }
 .update-task-state { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+
+/* ─── D2: a task opened in place ─── */
+.tk-chev { margin-inline-start: auto; flex-shrink: 0; align-self: center; color: var(--text-muted); transition: transform 0.15s; }
+.tk-open .tk-chev { transform: rotate(180deg); color: var(--accent); }
+.tk-open > .tk-row { border-color: var(--accent-light); border-bottom-style: dashed; background: var(--surface-2); }
+.tk-parent, .tk-steps { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: var(--text-muted); }
+.tk-steps.all { color: var(--success, var(--accent)); }
+.td {
+  border: 1px solid var(--accent-light); border-top: 0; border-inline-start: 3px solid var(--accent);
+  background: var(--surface); padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px;
+}
+.td-parent {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  font: inherit; font-size: 12.5px; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-align: start;
+}
+.td-parent:hover { text-decoration: underline; }
+.td-parent bdi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; color: var(--text-primary); }
+.td-details { font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.td-none { color: var(--text-muted); font-size: 13px; }
+.td-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 14px; margin: 0; }
+.td-facts > div { min-width: 0; }
+.td-facts dt { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.td-facts dd { margin: 2px 0 0; font-size: 13px; color: var(--text-primary); overflow-wrap: anywhere; }
+.td-late { color: var(--danger) !important; font-weight: 700; }
+@media (max-width: 640px) { .td-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.td-sec { border-top: 1px solid var(--border); padding-top: 10px; }
+.td-sec-head { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; color: var(--accent); }
+.td-sec-head h3 { font-size: 14px; font-weight: 800; color: var(--text-primary); }
+.td-sec-count { margin-inline-start: auto; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.td-empty { margin-top: 6px; font-size: 13px; color: var(--text-muted); }
+.td-steps, .td-kids { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.td-step { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 10px; min-height: 36px; padding: 2px 0; border-bottom: 1px dashed var(--border); }
+.td-step:last-child { border-bottom: 0; }
+.td-step-tick { display: inline-flex; align-items: center; gap: 10px; flex: 1 1 200px; min-width: 0; cursor: pointer; font-size: 13.5px; }
+.td-step-tick input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+.td-step-tick input:disabled { cursor: default; }
+.td-step-name { overflow-wrap: anywhere; min-width: 0; }
+.td-step.reached .td-step-name { color: var(--text-secondary); text-decoration: line-through; }
+.td-step-when { font-size: 11.5px; color: var(--text-muted); }
+.td-step-del { color: var(--text-muted); }
+.td-step-del:hover:not(:disabled) { color: var(--danger); }
+.td-add { display: flex; gap: 8px; margin-top: 8px; }
+.td-add .input { flex: 1; min-width: 0; padding-block: 7px; }
+.td-kid {
+  width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 7px 10px; text-align: start;
+  font: inherit; font-size: 13px; color: var(--text-primary); background: var(--surface-2); border: 1px solid var(--border); cursor: pointer;
+}
+.td-kid:hover { border-color: var(--accent-light); }
+.td-kid.done .td-kid-title { text-decoration: line-through; color: var(--text-secondary); }
+.td-kid-title { font-weight: 600; flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+.td-kid .badge { font-size: 10.5px; }
+.td-kid-pct { font-weight: 700; color: var(--text-secondary); font-size: 12px; }
+.td-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 10px; }
+@media (max-width: 520px) { .td { padding: 10px; } .td-actions .btn { flex: 1; justify-content: center; } }
+[dir="rtl"] .tk-parent svg, [dir="rtl"] .td-parent svg { transform: scaleX(-1); }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from './useSession';
-import type { Category, DailyUpdate, FileItem, FollowUp, Message, Milestone, SyncResult, Task } from '../types';
+import type { Category, DailyUpdate, FileItem, FollowUp, Message, Milestone, Step, SyncResult, Task } from '../types';
 
 /** docs/DESIGN.md §5: every 8 s while the project is on screen, every 60 s in a background tab. */
 const VISIBLE_MS = 8 * 1000;
@@ -34,13 +34,15 @@ export interface ProjectData {
   milestones: Milestone[];
   /** Every task's follow-up log, removed entries too (they are filtered out when shown). */
   followUps: FollowUp[];
+  /** Every task's own milestones, removed ones too. */
+  steps: Step[];
   /** Older messages exist on the server (scroll up / "Show older"). */
   hasMoreMessages: boolean;
   /** When I last read this project, as it was when I opened it. */
   lastReadAt: string;
 }
 
-const EMPTY: ProjectData = { messages: [], tasks: [], updates: [], files: [], categories: [], milestones: [], followUps: [], hasMoreMessages: false, lastReadAt: '' };
+const EMPTY: ProjectData = { messages: [], tasks: [], updates: [], files: [], categories: [], milestones: [], followUps: [], steps: [], hasMoreMessages: false, lastReadAt: '' };
 
 /**
  * Keeps one project's messages, tasks, daily updates and files in step with the
@@ -75,6 +77,7 @@ export function useProjectSync(projectId: string, call: Session['call']) {
       categories: mergeById(d.categories, r.categories ?? [], (c) => c.updatedAt),
       milestones: mergeById(d.milestones, r.milestones ?? [], (m) => m.updatedAt),
       followUps: mergeById(d.followUps, r.followUps ?? [], (f) => f.updatedAt),
+      steps: mergeById(d.steps, r.steps ?? [], (x) => x.updatedAt),
       hasMoreMessages: r.full ? r.hasMoreMessages : d.hasMoreMessages,
       lastReadAt: r.full ? r.lastReadAt : d.lastReadAt,
     }));
@@ -128,6 +131,7 @@ export function useProjectSync(projectId: string, call: Session['call']) {
   const putCategory = useCallback((c: Category) => setData((d) => ({ ...d, categories: mergeById(d.categories, [c], (x) => x.updatedAt) })), []);
   const putMilestone = useCallback((m: Milestone) => setData((d) => ({ ...d, milestones: mergeById(d.milestones, [m], (x) => x.updatedAt) })), []);
   const putFollowUp = useCallback((f: FollowUp) => setData((d) => ({ ...d, followUps: mergeById(d.followUps, [f], (x) => x.updatedAt) })), []);
+  const putStep = useCallback((x: Step) => setData((d) => ({ ...d, steps: mergeById(d.steps, [x], (y) => y.updatedAt) })), []);
   const putUpdate = useCallback((u: DailyUpdate) => setData((d) => ({ ...d, updates: mergeById(d.updates, [u], updateStamp) })), []);
 
   const loadOlder = useCallback(async () => {
@@ -143,5 +147,5 @@ export function useProjectSync(projectId: string, call: Session['call']) {
     }
   }, [call, projectId, data.messages, loadingOlder]);
 
-  return { ...data, loaded, error, sync, putMessage, putFile, putTask, putUpdate, putCategory, putMilestone, putFollowUp, loadOlder, loadingOlder };
+  return { ...data, loaded, error, sync, putMessage, putFile, putTask, putUpdate, putCategory, putMilestone, putFollowUp, putStep, loadOlder, loadingOlder };
 }

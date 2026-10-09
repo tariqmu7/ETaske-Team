@@ -1,10 +1,11 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BellRing, CalendarClock, ChevronDown, ClipboardList, Flag, Plus, Rows3, Tags } from 'lucide-react';
+import { BellRing, CalendarClock, ChevronDown, ClipboardList, CornerDownRight, Flag, Plus, Rows3, Tags } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
 import { CategoriesModal } from '../components/CategoriesModal';
 import { MilestoneMeter, MilestonesModal } from '../components/MilestonesModal';
-import { TaskModal } from '../components/TaskModal';
+import { TaskDetail } from '../components/TaskDetail';
+import { TaskModal, type TaskSeed } from '../components/TaskModal';
 import { useLanguage } from '../hooks/useLanguage';
 import type { Session } from '../hooks/useSession';
 import type { useProjectSync } from '../hooks/useProjectSync';
@@ -12,6 +13,7 @@ import { categoryHue, categoryOf, liveCategories } from '../lib/categories';
 import { followUpState, nextFollowUps } from '../lib/followups';
 import { liveMilestones, milestoneOf, milestoneProgress } from '../lib/milestones';
 import { displayName, localDay, shortDate } from '../lib/format';
+import { stepCounts } from '../lib/steps';
 import { canEditTask, compareTasks, isLate, taskPriorityLabel, taskStatusClass, taskStatusLabel } from '../lib/tasks';
 import type { Member, Task, User } from '../types';
 
@@ -53,6 +55,12 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
   const [onlyChase, setOnlyChase] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);   // '' = new task
+  /** The task opened in place under its row (one at a time). */
+  const [expanded, setExpanded] = useState<string | null>(null);
+  /** Set while the new-task form makes a follow-up task of this task. */
+  const [followOf, setFollowOf] = useState<Task | null>(null);
+  /** Scroll this task's row into view once it is on screen. */
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState(ALL);
   const [msFilter, setMsFilter] = useState(ALL);
   const [groupBy, setGroupBy] = useState<GroupBy>('person');
@@ -71,6 +79,8 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
   const assignable = useMemo(() => members.filter((m) => m.status !== 'blocked'), [members]);
 
   const all = sync.tasks;
+  const counts = useMemo(() => stepCounts(sync.steps), [sync.steps]);
+  const serialOf = useMemo(() => new Map(all.map((x) => [x.id, x.serial])), [all]);
   /** Task id → its pending follow-up day (open tasks only). */
   const chase = useMemo(() => nextFollowUps(sync.followUps, all), [sync.followUps, all]);
   const isDue = (task: Task) => { const d = chase.get(task.id); return !!d && d <= today; };
@@ -126,7 +136,33 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
   const onSaved = (task: Task) => {
     sync.putTask(task);
     setOpenId(null);
+    setFollowOf(null);
     void sync.sync();   // brings the task line the server posted in the chat
+  };
+
+  /** Opens a task in place, clearing whatever filter would hide it (e.g. jumping to a parent task). */
+  const showTask = (id: string) => {
+    const task = all.find((x) => x.id === id);
+    if (!task) return;
+    if (!shown.some((x) => x.id === id)) {
+      setOnlyMine(false); setOnlyChase(false); setCatFilter(ALL); setMsFilter(ALL);
+    }
+    if (task.status === 'done') setShowDone(true);
+    setExpanded(id);
+    setScrollTo(id);
+  };
+
+  useEffect(() => {
+    if (!scrollTo) return;
+    document.getElementById(`tk-${scrollTo}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    setScrollTo(null);
+  }, [scrollTo]);
+
+  const newSeed: TaskSeed | undefined = opened ? undefined : followOf ? {
+    assigneeEmail: followOf.assigneeEmail, categoryId: followOf.categoryId, parentTaskId: followOf.id, parentSerial: followOf.serial,
+  } : {
+    categoryId: filter !== ALL ? filter : undefined,
+    milestoneId: msFilt !== ALL ? msFilt : undefined,
   };
 
   return (
@@ -245,16 +281,33 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
                 const cat = byCategory ? null : categoryOf(cats, task.categoryId);
                 const fuDay = chase.get(task.id);
                 const fu = fuDay ? followUpState(fuDay, today) : null;
+                const isOpen = expanded === task.id;
+                const sc = counts.get(task.id);
+                const parentSerial = task.parentTaskId ? serialOf.get(task.parentTaskId) : undefined;
                 return (
-                  <li key={task.id}>
-                    <button type="button" className={`tk-row${late ? ' late' : ''}${fu === 'overdue' ? ' fu-overdue' : ''}${task.status === 'done' ? ' done' : ''}`} onClick={() => setOpenId(task.id)}>
+                  <li key={task.id} id={`tk-${task.id}`} className={isOpen ? 'tk-open' : undefined}>
+                    <button
+                      type="button" className={`tk-row${late ? ' late' : ''}${fu === 'overdue' ? ' fu-overdue' : ''}${task.status === 'done' ? ' done' : ''}`}
+                      onClick={() => setExpanded(isOpen ? null : task.id)} aria-expanded={isOpen} aria-controls={isOpen ? `td-${task.id}` : undefined}
+                    >
                       <span className="tk-row-top">
                         <span className="task-serial ltr-data">{task.serial}</span>
                         <bdi className="task-title">{task.title}</bdi>
+                        <ChevronDown className="tk-chev" style={{ width: 16, height: 16 }} aria-hidden="true" />
                       </span>
                       <span className="tk-row-meta">
                         <span className={`badge ${taskStatusClass(task.status)}`}>{taskStatusLabel(t, task.status)}</span>
                         {task.priority === 'high' && <span className="badge badge-high">{taskPriorityLabel(t, 'high')}</span>}
+                        {parentSerial && (
+                          <span className="tk-parent" title={t('Follow-up of')}>
+                            <CornerDownRight style={{ width: 12, height: 12 }} aria-hidden="true" /><span className="ltr-data">{parentSerial}</span>
+                          </span>
+                        )}
+                        {sc && (
+                          <span className={`tk-steps${sc.reached === sc.total ? ' all' : ''}`} title={t('{{reached}} of {{total}} reached', { reached: sc.reached, total: sc.total })}>
+                            <Flag style={{ width: 12, height: 12 }} aria-hidden="true" /><span className="ltr-data">{sc.reached}/{sc.total}</span>
+                          </span>
+                        )}
                         {cat && <bdi className="cat-chip" style={{ '--cat-h': categoryHue(cat.id) } as CSSProperties}>{cat.name}</bdi>}
                         {groupBy !== 'person' && task.assigneeEmail && <bdi className="task-who">{displayName(task.assigneeEmail, people)}</bdi>}
                         {task.dueDate && (
@@ -277,6 +330,15 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
                         </span>
                       </span>
                     </button>
+                    {isOpen && (
+                      <TaskDetail
+                        projectId={projectId} call={call} task={task} tasks={all} steps={sync.steps}
+                        category={categoryOf(cats, task.categoryId)} people={people} today={today}
+                        canEdit={!archived && canEditTask(task, me, isLead)} canAddFollowUp={!archived}
+                        onStepChanged={sync.putStep} onResync={() => void sync.sync()} onShowTask={showTask}
+                        onEdit={() => setOpenId(task.id)} onAddFollowUp={() => { setFollowOf(task); setOpenId(''); }}
+                      />
+                    )}
                   </li>
                 );
               })}
@@ -299,17 +361,15 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
           members={assignable}
           people={people}
           task={opened}
-          seed={opened ? undefined : {
-            categoryId: filter !== ALL ? filter : undefined,
-            milestoneId: msFilt !== ALL ? msFilt : undefined,
-          }}
+          seed={newSeed}
           categories={cats}
           onCategoryAdded={sync.putCategory}
           milestones={stones}
           canEdit={!archived && (!opened || canEditTask(opened, me, isLead))}
+          stepsLocked={!!opened && counts.has(opened.id)}
           followUp={{ followUps: sync.followUps, myEmail, canAdd: !archived, canManage, onChanged: sync.putFollowUp }}
           onSaved={onSaved}
-          onClose={() => setOpenId(null)}
+          onClose={() => { setOpenId(null); setFollowOf(null); }}
         />
       )}
 

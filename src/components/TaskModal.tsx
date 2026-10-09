@@ -22,6 +22,9 @@ export interface TaskSeed {
   categoryId?: string;
   milestoneId?: string;
   fromMessageId?: string;
+  /** Makes the new task a follow-up of this task (fixed once made). */
+  parentTaskId?: string;
+  parentSerial?: string;
 }
 
 interface Props {
@@ -41,6 +44,8 @@ interface Props {
   milestones: Milestone[];
   /** False: the form is shown read-only, with the reason. */
   canEdit: boolean;
+  /** The task has its own milestones: its % follows them, so the slider is locked. */
+  stepsLocked?: boolean;
   /** An existing task's follow-up log (Tasks tab). Anyone in the project may add to it, even when canEdit is false. */
   followUp?: {
     followUps: FollowUp[];
@@ -81,7 +86,7 @@ function fieldsOf(task: Task | null, seed: TaskSeed | undefined): Fields {
 }
 
 /** New task, or one task's details. Saves only the fields that changed. */
-export function TaskModal({ projectId, call, members, people, task, seed, categories, onCategoryAdded, milestones, canEdit, followUp, onSaved, onClose }: Props) {
+export function TaskModal({ projectId, call, members, people, task, seed, categories, onCategoryAdded, milestones, canEdit, stepsLocked, followUp, onSaved, onClose }: Props) {
   const { t } = useTranslation();
   const { lang } = useLanguage();
   // Frozen at opening: a sync that changes the task meanwhile must not make
@@ -134,7 +139,7 @@ export function TaskModal({ projectId, call, members, people, task, seed, catego
       if (!Object.keys(changed).length) { onClose(); return; }
       args = { projectId, taskId: task.id, ...changed };
     } else {
-      args = { projectId, ...values, fromMessageId: seed?.fromMessageId || undefined };
+      args = { projectId, ...values, fromMessageId: seed?.fromMessageId || undefined, parentTaskId: seed?.parentTaskId || undefined };
     }
 
     setSaving(true);
@@ -151,7 +156,7 @@ export function TaskModal({ projectId, call, members, people, task, seed, catego
   };
 
   const titleId = 'task-modal-title';
-  const heading = task ? `${task.serial}` : seed?.fromMessageId ? t('Make it a task') : t('New task');
+  const heading = task ? `${task.serial}` : seed?.fromMessageId ? t('Make it a task') : seed?.parentTaskId ? t('New follow-up task') : t('New task');
 
   return createPortal(
     <div className="modal-overlay" onClick={() => { if (!saving) onClose(); }}>
@@ -163,6 +168,11 @@ export function TaskModal({ projectId, call, members, people, task, seed, catego
           <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={onClose} disabled={saving} aria-label={t('Close')}><X style={{ width: 16, height: 16 }} /></button>
         </div>
 
+        {!task && seed?.parentSerial && (
+          <p className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
+            {t('Follow-up of')} <span className="ltr-data">{seed.parentSerial}</span>
+          </p>
+        )}
         {readOnly && (
           <p className="task-modal-note">{t('Only the person assigned, the person who made the task, the project lead or an admin can change it.')}</p>
         )}
@@ -230,8 +240,9 @@ export function TaskModal({ projectId, call, members, people, task, seed, catego
         </label>
         <input
           id="tm-percent" type="range" min={0} max={100} step={5} value={f.percent} className="task-range"
-          onChange={(e) => set('percent', Number(e.target.value))} disabled={readOnly || f.status === 'done'}
+          onChange={(e) => set('percent', Number(e.target.value))} disabled={readOnly || f.status === 'done' || stepsLocked}
         />
+        {stepsLocked && <p className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>{t("Progress follows this task's milestones. Tick them in the task list.")}</p>}
 
         {task && (
           <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>

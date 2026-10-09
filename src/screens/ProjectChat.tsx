@@ -42,12 +42,14 @@ class TooBig extends Error {}
 function eventLines(t: TFunction, ev: TaskEvent, nameOf: (email: string) => string): string[] {
   const lines: string[] = [];
   if (ev.type === 'taskCreated') {
+    if (ev.parentSerial) lines.push(t('Follow-up of {{serial}}', { serial: ev.parentSerial }));
     if (ev.assigneeEmail) lines.push(t('Assigned to {{name}}', { name: nameOf(ev.assigneeEmail) }));
     if (ev.dueDate) lines.push(t('Due {{date}}', { date: ev.dueDate }));
     if (ev.status && ev.status !== 'todo') lines.push(t('Status: {{status}}', { status: taskStatusLabel(t, ev.status) }));
     return lines;
   }
   const c = ev.changes ?? {};
+  if (ev.reachedStep) lines.push(t('Reached the milestone "{{name}}"', { name: ev.reachedStep }));
   if (c.status) lines.push(t('Status changed from {{from}} to {{to}}', { from: taskStatusLabel(t, c.status.from), to: taskStatusLabel(t, c.status.to) }));
   if (c.percent && !(c.status?.to === 'done' && c.percent.to === 100)) {
     lines.push(t('Progress changed from {{from}}% to {{to}}%', { from: c.percent.from, to: c.percent.to }));

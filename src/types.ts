@@ -69,6 +69,24 @@ export interface Task {
   categoryId: string;
   /** '' = no milestone. May name a removed milestone; the app then shows none. */
   milestoneId: string;
+  /** '' = a normal task; otherwise the task this one follows up (set at creation, never changed). */
+  parentTaskId?: string;
+}
+
+/** A milestone inside one task. Ticking them drives the task's % on the server. */
+export interface Step {
+  id: string;
+  projectId: string;
+  taskId: string;
+  name: string;
+  position: number;
+  reached: boolean;
+  reachedAt: string;
+  reachedBy: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  deleted: boolean;
 }
 
 /** A project's own list of task categories; any member adds, lead/admin rename or remove. */
@@ -119,6 +137,10 @@ export interface TaskEvent {
   assigneeEmail: string;
   status?: TaskStatus;
   dueDate?: string;
+  /** taskCreated: the serial of the task this one follows up. */
+  parentSerial?: string;
+  /** taskUpdated: the task milestone just ticked as reached. */
+  reachedStep?: string;
   changes?: {
     status?: Change<TaskStatus>;
     percent?: Change<number>;
@@ -184,4 +206,5 @@ export interface SyncResult {
   categories?: Category[];
   milestones?: Milestone[];
   followUps?: FollowUp[];
+  steps?: Step[];
 }
