@@ -12,3 +12,6 @@ backups/
 *.xlsx
 *.csv
 scripts/harness/*.png
+
+# clasp link to the live Google script (ids stay off the public repo)
+apps-script/.clasp.json
