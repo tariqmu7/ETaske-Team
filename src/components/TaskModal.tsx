@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
+import { CategoryPicker } from './CategoryPicker';
 import { useLanguage } from '../hooks/useLanguage';
 import type { Session } from '../hooks/useSession';
 import { errorText } from '../lib/errors';
@@ -9,13 +10,14 @@ import { displayName, timeAgo } from '../lib/format';
 import {
   MAX_TASK_TEXT, MAX_TASK_TITLE, TASK_PRIORITIES, TASK_STATUSES, taskPriorityLabel, taskStatusLabel,
 } from '../lib/tasks';
-import type { Member, Task, TaskPriority, TaskStatus } from '../types';
+import type { Category, Member, Task, TaskPriority, TaskStatus } from '../types';
 
 /** What a new task starts with — e.g. a chat message being turned into a task. */
 export interface TaskSeed {
   title?: string;
   details?: string;
   assigneeEmail?: string;
+  categoryId?: string;
   fromMessageId?: string;
 }
 
@@ -29,6 +31,9 @@ interface Props {
   /** The task to show or change; null = a new task. */
   task: Task | null;
   seed?: TaskSeed;
+  /** The project's categories (removed ones too) and how to show a newly added one at once. */
+  categories: Category[];
+  onCategoryAdded: (c: Category) => void;
   /** False: the form is shown read-only, with the reason. */
   canEdit: boolean;
   onSaved: (task: Task) => void;
@@ -43,23 +48,24 @@ interface Fields {
   percent: number;
   priority: TaskPriority;
   dueDate: string;
+  categoryId: string;
 }
 
 function fieldsOf(task: Task | null, seed: TaskSeed | undefined): Fields {
   if (task) {
     return {
       title: task.title, details: task.details, assigneeEmail: task.assigneeEmail.toLowerCase(), status: task.status,
-      percent: task.percent, priority: task.priority, dueDate: task.dueDate,
+      percent: task.percent, priority: task.priority, dueDate: task.dueDate, categoryId: task.categoryId ?? '',
     };
   }
   return {
     title: seed?.title ?? '', details: seed?.details ?? '', assigneeEmail: seed?.assigneeEmail?.toLowerCase() ?? '',
-    status: 'todo', percent: 0, priority: 'normal', dueDate: '',
+    status: 'todo', percent: 0, priority: 'normal', dueDate: '', categoryId: seed?.categoryId ?? '',
   };
 }
 
 /** New task, or one task's details. Saves only the fields that changed. */
-export function TaskModal({ projectId, call, members, people, task, seed, canEdit, onSaved, onClose }: Props) {
+export function TaskModal({ projectId, call, members, people, task, seed, categories, onCategoryAdded, canEdit, onSaved, onClose }: Props) {
   const { t } = useTranslation();
   const { lang } = useLanguage();
   // Frozen at opening: a sync that changes the task meanwhile must not make
@@ -174,6 +180,13 @@ export function TaskModal({ projectId, call, members, people, task, seed, canEdi
             <select id="tm-priority" className="input" value={f.priority} onChange={(e) => set('priority', e.target.value as TaskPriority)} disabled={readOnly}>
               {TASK_PRIORITIES.map((p) => <option key={p} value={p}>{taskPriorityLabel(t, p)}</option>)}
             </select>
+          </div>
+          <div className="task-modal-wide">
+            <label className="input-label" htmlFor="tm-category">{t('Category')}</label>
+            <CategoryPicker
+              id="tm-category" projectId={projectId} call={call} categories={categories} value={f.categoryId}
+              onChange={(id) => set('categoryId', id)} onAdded={onCategoryAdded} disabled={readOnly}
+            />
           </div>
         </div>
 

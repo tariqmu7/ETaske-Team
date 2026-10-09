@@ -31,7 +31,8 @@ var TABLES = {
   projects: ['id', 'name', 'description', 'folderId', 'createdBy', 'createdAt', 'archived'],
   members: ['projectId', 'email', 'role', 'addedBy', 'addedAt'],
   messages: ['id', 'projectId', 'authorEmail', 'text', 'mentions', 'replyToId', 'fileIds', 'taskId', 'createdAt', 'editedAt', 'deleted', 'kind'],
-  tasks: ['id', 'projectId', 'serial', 'title', 'details', 'assigneeEmail', 'createdBy', 'status', 'percent', 'priority', 'dueDate', 'createdAt', 'updatedAt', 'doneAt'],
+  tasks: ['id', 'projectId', 'serial', 'title', 'details', 'assigneeEmail', 'createdBy', 'status', 'percent', 'priority', 'dueDate', 'createdAt', 'updatedAt', 'doneAt', 'categoryId'],
+  categories: ['id', 'projectId', 'name', 'createdBy', 'createdAt', 'updatedAt', 'deleted'],
   updates: ['id', 'projectId', 'authorEmail', 'date', 'done', 'remaining', 'blockers', 'taskIds', 'fileIds', 'createdAt', 'updatedAt'],
   files: ['id', 'projectId', 'name', 'mimeType', 'size', 'uploaderEmail', 'messageId', 'updateId', 'createdAt'],
   reads: ['email', 'projectId', 'lastReadAt'],
@@ -46,6 +47,8 @@ var TASK_STATUSES = ['todo', 'doing', 'blocked', 'done'];
 var TASK_PRIORITIES = ['low', 'normal', 'high'];
 
 var MAX_NAME = 100;
+var MAX_CATEGORY = 60;
+var MAX_CATEGORIES = 100;    // per project
 var MAX_DESCRIPTION = 2000;
 var MAX_TEXT = 4000;
 var MAX_TITLE = 200;
@@ -185,6 +188,8 @@ var ACTIONS = {
   deleteMessage: { who: 'approved', write: true, fn: actionDeleteMessage_ },
   createTask: { who: 'approved', write: true, fn: actionCreateTask_ },
   updateTask: { who: 'approved', write: true, fn: actionUpdateTask_ },
+  addCategory: { who: 'approved', write: true, fn: actionAddCategory_ },
+  editCategory: { who: 'approved', write: true, fn: actionEditCategory_ },
   postUpdate: { who: 'approved', write: true, fn: actionPostUpdate_ },
   // Not `write`: the Drive upload runs outside the lock; only the Sheet row is written under it.
   uploadFile: { who: 'approved', fn: actionUploadFile_ },
@@ -282,13 +287,18 @@ function resetMemo_() { memo_ = {}; }
 
 function table_(name) {
   if (memo_[name]) return memo_[name];
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
-  if (!sheet) throw new Error('Missing tab "' + name + '" — run setup().');
-  var values = sheet.getDataRange().getValues();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
+  var values = sheet ? sheet.getDataRange().getValues() : [];
   var headers = (values[0] || []).map(String);
-  TABLES[name].forEach(function (h) {
-    if (headers.indexOf(h) === -1) throw new Error('Tab "' + name + '" has no column "' + h + '" — run setup().');
-  });
+  // A newer version of this script may need a tab or column the Sheet does not have yet:
+  // add it on the spot (same as setup() would), so an update never needs a manual run.
+  if (!sheet || TABLES[name].some(function (h) { return headers.indexOf(h) === -1; })) {
+    ensureTab_(ss, name, TABLES[name]);
+    sheet = ss.getSheetByName(name);
+    values = sheet.getDataRange().getValues();
+    headers = (values[0] || []).map(String);
+  }
   var rows = [];
   for (var r = 1; r < values.length; r++) {
     var obj = { _row: r + 1 };
@@ -808,6 +818,15 @@ function argAssignee_(body, project) {
   return email;
 }
 
+/** '' (none) or the id of a category of this project that is still in use. */
+function argCategory_(body, project) {
+  var v = body.categoryId;
+  if (v === undefined || v === null || v === '') return '';
+  var c = findInProject_('categories', project.id, v);
+  if (!c || c.deleted === 'TRUE') throw apiError_('BAD_REQUEST', 'That category is not in this project any more.');
+  return c.id;
+}
+
 /** Sets messageId / updateId on files that are not linked to anything yet. */
 function linkFiles_(fileIds, field, value) {
   fileIds.forEach(function (id) {
@@ -844,6 +863,10 @@ function taskView_(t) {
   var out = strip_(t);
   out.percent = Number(t.percent) || 0;
   return out;
+}
+
+function categoryView_(c) {
+  return { id: c.id, projectId: c.projectId, name: c.name, createdBy: c.createdBy, createdAt: c.createdAt, updatedAt: c.updatedAt, deleted: c.deleted === 'TRUE' };
 }
 
 function updateView_(u) {
@@ -900,7 +923,9 @@ function actionSync_(ctx, body) {
   var tasks = projectRows_('tasks', project.id);
   var updates = projectRows_('updates', project.id);
   var files = projectRows_('files', project.id);
+  var categories = projectRows_('categories', project.id);
   if (since) {
+    categories = categories.filter(function (c) { return c.updatedAt > since; });
     tasks = tasks.filter(function (x) { return x.updatedAt > since; });
     updates = updates.filter(function (u) { return updateStamp_(u) > since; });
     files = files.filter(function (f) { return f.createdAt > since; });
@@ -922,7 +947,8 @@ function actionSync_(ctx, body) {
     messages: messages.map(messageView_),
     tasks: tasks.sort(byCreated_).map(taskView_),
     updates: updates.sort(byCreated_).map(updateView_),
-    files: files.sort(byCreated_).map(fileView_)
+    files: files.sort(byCreated_).map(fileView_),
+    categories: categories.sort(byCreated_).map(categoryView_)
   };
 }
 
@@ -1042,6 +1068,7 @@ function actionCreateTask_(ctx, body) {
   var priority = body.priority === undefined ? 'normal' : argEnum_(body, 'priority', TASK_PRIORITIES);
   var percent = body.percent === undefined ? 0 : argPercent_(body);
   var dueDate = argDate_(body, 'dueDate', false);
+  var categoryId = argCategory_(body, project);
   var from = argRef_(body, 'fromMessageId', 'messages', project, 'The message');
   if (from && from.deleted === 'TRUE') throw apiError_('NOT_FOUND', 'The message was not found.');
   if (status === 'done') percent = 100;
@@ -1051,7 +1078,7 @@ function actionCreateTask_(ctx, body) {
     id: Utilities.getUuid(), projectId: project.id, serial: nextSerial_(project.id),
     title: title, details: details, assigneeEmail: assignee, createdBy: ctx.email,
     status: status, percent: String(percent), priority: priority, dueDate: dueDate,
-    createdAt: now, updatedAt: now, doneAt: status === 'done' ? now : ''
+    createdAt: now, updatedAt: now, doneAt: status === 'done' ? now : '', categoryId: categoryId
   });
   postEvent_(ctx, project, task, {
     type: 'taskCreated', serial: task.serial, title: title, assigneeEmail: assignee, status: status, dueDate: dueDate
@@ -1077,6 +1104,7 @@ function actionUpdateTask_(ctx, body) {
   if (body.percent !== undefined) next.percent = String(argPercent_(body));
   if (body.priority !== undefined) next.priority = argEnum_(body, 'priority', TASK_PRIORITIES);
   if (body.dueDate !== undefined) next.dueDate = argDate_(body, 'dueDate', false);
+  if (body.categoryId !== undefined) next.categoryId = argCategory_(body, project);
 
   var now = now_();
   if (next.status === 'done' && task.status !== 'done') { next.doneAt = now; next.percent = '100'; }
@@ -1101,6 +1129,63 @@ function actionUpdateTask_(ctx, body) {
     });
   }
   return taskView_(task);
+}
+
+// ---------------------------------------------------------------------------
+// Task categories — a per-project list anyone in the project can add to
+// ---------------------------------------------------------------------------
+
+function sameName_(a, b) { return String(a).trim().toLowerCase() === String(b).trim().toLowerCase(); }
+
+/** Adds a category; if one with the same name exists it is returned (or brought back if removed). */
+function actionAddCategory_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var name = argText_(body, 'name', MAX_CATEGORY, true);
+  var rows = projectRows_('categories', project.id);
+  var same = rows.filter(function (c) { return sameName_(c.name, name); })[0];
+  if (same) {
+    if (same.deleted === 'TRUE') saveRow_('categories', same, { deleted: '', updatedAt: now_() });
+    return categoryView_(same);
+  }
+  var live = rows.filter(function (c) { return c.deleted !== 'TRUE'; }).length;
+  if (live >= MAX_CATEGORIES) throw apiError_('BAD_REQUEST', 'This project already has ' + MAX_CATEGORIES + ' categories.');
+  var now = now_();
+  return categoryView_(insertRow_('categories', {
+    id: Utilities.getUuid(), projectId: project.id, name: name, createdBy: ctx.email,
+    createdAt: now, updatedAt: now, deleted: ''
+  }));
+}
+
+/**
+ * Rename (`name`) or remove (`deleted: true`) a category — project lead or admin only.
+ * Removing hides it from the list; tasks that had it simply show no category.
+ */
+function actionEditCategory_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  if (!canManageProject_(ctx, project)) throw apiError_('FORBIDDEN', 'Only the project lead or an admin can rename or remove a category.');
+  var cat = findInProject_('categories', project.id, body.categoryId);
+  if (!cat) throw apiError_('NOT_FOUND', 'Category not found.');
+  var changes = {};
+  if (body.name !== undefined) {
+    var name = argText_(body, 'name', MAX_CATEGORY, true);
+    var clash = projectRows_('categories', project.id).filter(function (c) {
+      return c.id !== cat.id && c.deleted !== 'TRUE' && sameName_(c.name, name);
+    })[0];
+    if (clash) throw apiError_('CONFLICT', 'There is already a category with that name.');
+    changes.name = name;
+  }
+  if (body.deleted !== undefined) {
+    if (typeof body.deleted !== 'boolean') throw apiError_('BAD_REQUEST', '"deleted" must be true or false.');
+    changes.deleted = body.deleted ? 'TRUE' : '';
+  }
+  if (!Object.keys(changes).length) return categoryView_(cat);
+  changes.updatedAt = now_();
+  saveRow_('categories', cat, changes);
+  return categoryView_(cat);
 }
 
 // ---------------------------------------------------------------------------

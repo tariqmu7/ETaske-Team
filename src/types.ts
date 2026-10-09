@@ -65,6 +65,19 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   doneAt: string;
+  /** '' = no category. May name a removed category; the app then shows none. */
+  categoryId: string;
+}
+
+/** A project's own list of task categories; any member adds, lead/admin rename or remove. */
+export interface Category {
+  id: string;
+  projectId: string;
+  name: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  deleted: boolean;
 }
 
 interface Change<T> { from: T; to: T }
@@ -139,4 +152,5 @@ export interface SyncResult {
   tasks: Task[];
   updates: DailyUpdate[];
   files: FileItem[];
+  categories?: Category[];
 }

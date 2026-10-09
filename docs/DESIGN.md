@@ -66,7 +66,8 @@ formatted `@`) so Sheets never reformats them. Ids are `Utilities.getUuid()`.
 | `projects` | id · name · description · folderId · createdBy · createdAt · archived (`TRUE`/blank) |
 | `members` | projectId · email · role (`lead`/`member`) · addedBy · addedAt |
 | `messages` | id · projectId · authorEmail · text · mentions (comma list of e-mails) · replyToId · fileIds (comma list) · taskId · createdAt · editedAt · deleted · kind (blank = typed message, `event` = task line whose text is JSON) |
-| `tasks` | id · projectId · serial (`T-001` per project) · title · details · assigneeEmail · createdBy · status (`todo`/`doing`/`blocked`/`done`) · percent (0–100) · priority (`low`/`normal`/`high`) · dueDate (YYYY-MM-DD) · createdAt · updatedAt · doneAt |
+| `tasks` | id · projectId · serial (`T-001` per project) · title · details · assigneeEmail · createdBy · status (`todo`/`doing`/`blocked`/`done`) · percent (0–100) · priority (`low`/`normal`/`high`) · dueDate (YYYY-MM-DD) · createdAt · updatedAt · doneAt · categoryId |
+| `categories` | id · projectId · name · createdBy · createdAt · updatedAt · deleted — the project's own task category list (added 9 Oct 2026) |
 | `updates` | id · projectId · authorEmail · date (YYYY-MM-DD) · done · remaining · blockers · taskIds (comma list) · fileIds · createdAt · updatedAt — one row per person per project per day |
 | `files` | id (Drive file id) · projectId · name · mimeType · size · uploaderEmail · messageId · updateId · createdAt |
 | `reads` | email · projectId · lastReadAt — drives unread counts |
@@ -96,6 +97,7 @@ All writes run under `LockService.getScriptLock()` so two people saving at once 
 | `sync` | member | everything in one project changed since `since` (messages, tasks, updates, files) + `next` to send as the next `since`. First call (no `since`): all tasks and files, last 200 messages, last 30 days of updates. Answers overlap by 30 s, so the app **merges rows by id** |
 | `listMessages` | member | older messages for scrolling up: `before` (a createdAt) + `limit` ≤ 200 |
 | `postMessage` · `editMessage` · `deleteMessage` | member (edit/delete: author or admin) | the app sends `mentions` as e-mails; non-members are dropped. Delete hides the message in the app; the text stays in the Sheet. Task lines cannot be edited; only an admin deletes them |
+| `addCategory` · `editCategory` | add: any member (same name in any case returns the existing one, or brings a removed one back); rename / remove: lead or admin. Removed categories stay in the tab; tasks naming one show no category. `sync` sends `categories` (all, then changed). Missing tabs/columns are added by the script itself on first use — no setup() run needed |
 | `createTask` · `updateTask` | create: any member; change: assignee, creator, lead or admin | serial `T-001` per project. Creating, and changing status / percent / assignee, posts an `event` line in chat (JSON the app words in the reader's language; the assignee is mentioned). `fromMessageId` turns a message into a task (the line replies to it). `done` sets 100 % and `doneAt` |
 | `postUpdate` | member | the daily "what I did / what is left / blockers"; posting again for the same day replaces it; no future days |
 | `uploadFile` | member | base64 body, ≤ 20 MB after encoding (~15 MB file); saved in the project folder; returns the `files` row with `url` and `thumbnailUrl`. The app then passes the id in `fileIds` of a message or update. Drive work runs outside the lock; if the Sheet row fails the Drive file is trashed |

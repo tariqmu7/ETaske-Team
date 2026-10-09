@@ -231,3 +231,35 @@
   .project-tab-badge, .project-tab-dot { position: absolute; top: 4px; inset-inline-start: calc(50% + 8px); }
   .file-tile-caption { display: none; }
 }
+
+/* ─── Task categories ─── */
+.pane-toolbar-sub { margin-top: -4px; }
+.cat-filter { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); flex: 1 1 180px; min-width: 0; max-width: 280px; }
+.cat-filter select.input { appearance: auto; padding-block: 6px; min-height: 32px; font-size: 13px; }
+.cat-chip {
+  --cat-h: 210;
+  display: inline-flex; align-items: center; gap: 5px; max-width: 180px;
+  padding: 2px 8px; font-size: 11.5px; font-weight: 700; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: hsl(var(--cat-h) 70% 94%); color: hsl(var(--cat-h) 60% 28%);
+  border: 1px solid hsl(var(--cat-h) 50% 82%);
+}
+[data-theme="dark"] .cat-chip { background: hsl(var(--cat-h) 45% 20%); color: hsl(var(--cat-h) 70% 80%); border-color: hsl(var(--cat-h) 40% 32%); }
+.task-who { font-weight: 600; color: var(--text-secondary); }
+.task-group-cat {
+  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  background: var(--surface-3); color: #fff;
+}
+.task-group-cat:not([style]) { color: var(--text-muted); }
+.cat-add { display: flex; gap: 6px; align-items: center; }
+.cat-add .input { flex: 1; min-width: 0; }
+.cat-list { list-style: none; margin: 12px 0 0; padding: 0; border: 1px solid var(--border); }
+.cat-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; min-height: 44px; }
+.cat-item + .cat-item { border-top: 1px solid var(--border); }
+.cat-item .input { flex: 1; min-width: 0; padding-block: 6px; }
+.cat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.cat-name { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-count { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.cat-empty { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 20px; margin-top: 12px; color: var(--text-muted); border: 1px dashed var(--border-md); font-size: 13px; }
+.task-modal-wide { grid-column: 1 / -1; }
+.pane-toolbar-sub .btn-sm { min-height: 34px; padding-block: 0; }
