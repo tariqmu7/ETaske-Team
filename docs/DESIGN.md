@@ -142,8 +142,8 @@ phone** in this version; unread badges in the app, and (optional, later) an e-ma
 2. Apps Script part 1: `setup`, token check, users/approval, projects, members, Drive folders ✅
 3. Apps Script part 2: messages, tasks, updates, uploads, sync, reads ✅
 4. Tariq: create the Sheet, paste the script, run `setup`, deploy the web app, set the two repo
-   variables
-5. Screens: sign in, waiting, projects, admin approvals
+   variables ✅
+5. Screens: sign in, waiting, projects, admin approvals ✅
 6. Screen: chat (polling, mentions, photos/files)
 7. Screens: tasks, updates, files, people
 8. Publish on Pages; live test with two Google accounts
