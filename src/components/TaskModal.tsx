@@ -3,16 +3,14 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { CategoryPicker } from './CategoryPicker';
-import { FollowUpLog } from './FollowUpLog';
 import { useLanguage } from '../hooks/useLanguage';
 import type { Session } from '../hooks/useSession';
 import { errorText } from '../lib/errors';
-import { liveMilestones } from '../lib/milestones';
-import { displayName, shortDate, timeAgo } from '../lib/format';
+import { displayName, timeAgo } from '../lib/format';
 import {
   MAX_TASK_TEXT, MAX_TASK_TITLE, TASK_PRIORITIES, TASK_STATUSES, taskPriorityLabel, taskStatusLabel,
 } from '../lib/tasks';
-import type { Category, FollowUp, Member, Milestone, Task, TaskPriority, TaskStatus } from '../types';
+import type { Category, Member, Task, TaskPriority, TaskStatus } from '../types';
 
 /** What a new task starts with — e.g. a chat message being turned into a task. */
 export interface TaskSeed {
@@ -20,7 +18,6 @@ export interface TaskSeed {
   details?: string;
   assigneeEmail?: string;
   categoryId?: string;
-  milestoneId?: string;
   fromMessageId?: string;
   /** Makes the new task a follow-up of this task (fixed once made). */
   parentTaskId?: string;
@@ -40,20 +37,10 @@ interface Props {
   /** The project's categories (removed ones too) and how to show a newly added one at once. */
   categories: Category[];
   onCategoryAdded: (c: Category) => void;
-  /** The project's milestones (removed ones too). */
-  milestones: Milestone[];
   /** False: the form is shown read-only, with the reason. */
   canEdit: boolean;
   /** The task has its own milestones: its % follows them, so the slider is locked. */
   stepsLocked?: boolean;
-  /** An existing task's follow-up log (Tasks tab). Anyone in the project may add to it, even when canEdit is false. */
-  followUp?: {
-    followUps: FollowUp[];
-    myEmail: string;
-    canAdd: boolean;
-    canManage: boolean;
-    onChanged: (f: FollowUp) => void;
-  };
   onSaved: (task: Task) => void;
   onClose: () => void;
 }
@@ -67,7 +54,6 @@ interface Fields {
   priority: TaskPriority;
   dueDate: string;
   categoryId: string;
-  milestoneId: string;
 }
 
 function fieldsOf(task: Task | null, seed: TaskSeed | undefined): Fields {
@@ -75,18 +61,16 @@ function fieldsOf(task: Task | null, seed: TaskSeed | undefined): Fields {
     return {
       title: task.title, details: task.details, assigneeEmail: task.assigneeEmail.toLowerCase(), status: task.status,
       percent: task.percent, priority: task.priority, dueDate: task.dueDate, categoryId: task.categoryId ?? '',
-      milestoneId: task.milestoneId ?? '',
     };
   }
   return {
     title: seed?.title ?? '', details: seed?.details ?? '', assigneeEmail: seed?.assigneeEmail?.toLowerCase() ?? '',
     status: 'todo', percent: 0, priority: 'normal', dueDate: '', categoryId: seed?.categoryId ?? '',
-    milestoneId: seed?.milestoneId ?? '',
   };
 }
 
 /** New task, or one task's details. Saves only the fields that changed. */
-export function TaskModal({ projectId, call, members, people, task, seed, categories, onCategoryAdded, milestones, canEdit, stepsLocked, followUp, onSaved, onClose }: Props) {
+export function TaskModal({ projectId, call, members, people, task, seed, categories, onCategoryAdded, canEdit, stepsLocked, onSaved, onClose }: Props) {
   const { t } = useTranslation();
   const { lang } = useLanguage();
   // Frozen at opening: a sync that changes the task meanwhile must not make
@@ -118,12 +102,6 @@ export function TaskModal({ projectId, call, members, people, task, seed, catego
     }
     return list.sort((a, b) => a.name.localeCompare(b.name));
   }, [members, f.assigneeEmail, people]);
-
-  // A milestone removed since stays visible as "(removed)" until the person picks another.
-  const stones = useMemo(() => liveMilestones(milestones), [milestones]);
-  const goneStone = f.milestoneId && !stones.some((m) => m.id === f.milestoneId)
-    ? milestones.find((m) => m.id === f.milestoneId) ?? null
-    : null;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -220,19 +198,6 @@ export function TaskModal({ projectId, call, members, people, task, seed, catego
               onChange={(id) => set('categoryId', id)} onAdded={onCategoryAdded} disabled={readOnly}
             />
           </div>
-          {(stones.length > 0 || f.milestoneId) && (
-            <div className="task-modal-wide">
-              <label className="input-label" htmlFor="tm-milestone">{t('Milestone')}</label>
-              <select id="tm-milestone" className="input" dir="auto" value={f.milestoneId} onChange={(e) => set('milestoneId', e.target.value)} disabled={readOnly}>
-                <option value="">{t('No milestone')}</option>
-                {stones.map((m) => (
-                  <option key={m.id} value={m.id}>{m.dueDate ? `${m.name} · ${shortDate(m.dueDate, lang)}` : m.name}</option>
-                ))}
-                {goneStone && <option value={goneStone.id}>{t('{{name}} (removed)', { name: goneStone.name })}</option>}
-                {f.milestoneId && !goneStone && !stones.some((m) => m.id === f.milestoneId) && <option value={f.milestoneId}>{t('No milestone')}</option>}
-              </select>
-            </div>
-          )}
         </div>
 
         <label className="input-label" htmlFor="tm-percent" style={{ marginTop: 12 }}>
@@ -248,9 +213,6 @@ export function TaskModal({ projectId, call, members, people, task, seed, catego
           <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>
             {t('Made by {{name}}, {{when}}', { name: displayName(task.createdBy, people), when: timeAgo(task.createdAt, lang) })}
           </p>
-        )}
-        {task && followUp && (
-          <FollowUpLog projectId={projectId} call={call} task={task} people={people} {...followUp} />
         )}
         {!task && seed?.fromMessageId && (
           <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>{t('A line about the new task is posted in the chat as a reply to the message.')}</p>

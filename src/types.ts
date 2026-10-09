@@ -67,7 +67,7 @@ export interface Task {
   doneAt: string;
   /** '' = no category. May name a removed category; the app then shows none. */
   categoryId: string;
-  /** '' = no milestone. May name a removed milestone; the app then shows none. */
+  /** Old project-wide milestone (C2, no longer shown; the Sheet keeps the column). */
   milestoneId: string;
   /** '' = a normal task; otherwise the task this one follows up (set at creation, never changed). */
   parentTaskId?: string;
@@ -95,33 +95,6 @@ export interface Category {
   projectId: string;
   name: string;
   createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  deleted: boolean;
-}
-
-/** A project checkpoint; the lead or an admin keeps the list, tasks link to it. */
-export interface Milestone {
-  id: string;
-  projectId: string;
-  name: string;
-  /** YYYY-MM-DD, or '' when there is no date. */
-  dueDate: string;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  deleted: boolean;
-}
-
-/** One entry in a task's follow-up log. The newest live entry's `nextDate` is the task's next follow-up. */
-export interface FollowUp {
-  id: string;
-  projectId: string;
-  taskId: string;
-  authorEmail: string;
-  note: string;
-  /** YYYY-MM-DD, or '' = nothing more to chase. */
-  nextDate: string;
   createdAt: string;
   updatedAt: string;
   deleted: boolean;
@@ -204,7 +177,5 @@ export interface SyncResult {
   updates: DailyUpdate[];
   files: FileItem[];
   categories?: Category[];
-  milestones?: Milestone[];
-  followUps?: FollowUp[];
   steps?: Step[];
 }
