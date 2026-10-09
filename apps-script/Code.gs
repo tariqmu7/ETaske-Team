@@ -31,10 +31,11 @@ var TABLES = {
   projects: ['id', 'name', 'description', 'folderId', 'createdBy', 'createdAt', 'archived'],
   members: ['projectId', 'email', 'role', 'addedBy', 'addedAt'],
   messages: ['id', 'projectId', 'authorEmail', 'text', 'mentions', 'replyToId', 'fileIds', 'taskId', 'createdAt', 'editedAt', 'deleted', 'kind'],
-  tasks: ['id', 'projectId', 'serial', 'title', 'details', 'assigneeEmail', 'createdBy', 'status', 'percent', 'priority', 'dueDate', 'createdAt', 'updatedAt', 'doneAt', 'categoryId', 'milestoneId'],
+  tasks: ['id', 'projectId', 'serial', 'title', 'details', 'assigneeEmail', 'createdBy', 'status', 'percent', 'priority', 'dueDate', 'createdAt', 'updatedAt', 'doneAt', 'categoryId', 'milestoneId', 'parentTaskId'],
   categories: ['id', 'projectId', 'name', 'createdBy', 'createdAt', 'updatedAt', 'deleted'],
   milestones: ['id', 'projectId', 'name', 'dueDate', 'createdBy', 'createdAt', 'updatedAt', 'deleted'],
   followups: ['id', 'projectId', 'taskId', 'authorEmail', 'note', 'nextDate', 'createdAt', 'updatedAt', 'deleted'],
+  steps: ['id', 'projectId', 'taskId', 'name', 'position', 'reachedAt', 'reachedBy', 'createdBy', 'createdAt', 'updatedAt', 'deleted'],
   updates: ['id', 'projectId', 'authorEmail', 'date', 'done', 'remaining', 'blockers', 'taskIds', 'fileIds', 'createdAt', 'updatedAt'],
   files: ['id', 'projectId', 'name', 'mimeType', 'size', 'uploaderEmail', 'messageId', 'updateId', 'createdAt'],
   reads: ['email', 'projectId', 'lastReadAt'],
@@ -55,6 +56,8 @@ var MAX_MILESTONE = 100;
 var MAX_MILESTONES = 100;    // per project
 var MAX_FOLLOWUP = 2000;
 var MAX_FOLLOWUPS = 200;     // per task
+var MAX_STEP = 100;
+var MAX_STEPS = 30;          // milestones inside one task
 var MAX_DESCRIPTION = 2000;
 var MAX_TEXT = 4000;
 var MAX_TITLE = 200;
@@ -200,6 +203,8 @@ var ACTIONS = {
   editMilestone: { who: 'approved', write: true, fn: actionEditMilestone_ },
   addFollowUp: { who: 'approved', write: true, fn: actionAddFollowUp_ },
   deleteFollowUp: { who: 'approved', write: true, fn: actionDeleteFollowUp_ },
+  addStep: { who: 'approved', write: true, fn: actionAddStep_ },
+  editStep: { who: 'approved', write: true, fn: actionEditStep_ },
   postUpdate: { who: 'approved', write: true, fn: actionPostUpdate_ },
   // Not `write`: the Drive upload runs outside the lock; only the Sheet row is written under it.
   uploadFile: { who: 'approved', fn: actionUploadFile_ },
@@ -899,6 +904,14 @@ function followUpView_(f) {
   };
 }
 
+function stepView_(s) {
+  return {
+    id: s.id, projectId: s.projectId, taskId: s.taskId, name: s.name, position: Number(s.position) || 0,
+    reached: !!s.reachedAt, reachedAt: s.reachedAt, reachedBy: s.reachedBy, createdBy: s.createdBy,
+    createdAt: s.createdAt, updatedAt: s.updatedAt, deleted: s.deleted === 'TRUE'
+  };
+}
+
 function updateView_(u) {
   var out = strip_(u);
   out.taskIds = cellList_(u.taskIds);
@@ -956,7 +969,9 @@ function actionSync_(ctx, body) {
   var categories = projectRows_('categories', project.id);
   var milestones = projectRows_('milestones', project.id);
   var followUps = projectRows_('followups', project.id);
+  var steps = projectRows_('steps', project.id);
   if (since) {
+    steps = steps.filter(function (x) { return x.updatedAt > since; });
     followUps = followUps.filter(function (f) { return f.updatedAt > since; });
     categories = categories.filter(function (c) { return c.updatedAt > since; });
     milestones = milestones.filter(function (m) { return m.updatedAt > since; });
@@ -984,7 +999,8 @@ function actionSync_(ctx, body) {
     files: files.sort(byCreated_).map(fileView_),
     categories: categories.sort(byCreated_).map(categoryView_),
     milestones: milestones.sort(byCreated_).map(milestoneView_),
-    followUps: followUps.sort(byCreated_).map(followUpView_)
+    followUps: followUps.sort(byCreated_).map(followUpView_),
+    steps: steps.sort(byCreated_).map(stepView_)
   };
 }
 
@@ -1091,7 +1107,9 @@ function canEditTask_(ctx, project, task) {
 
 /**
  * Any member may create a task. `fromMessageId` turns a chat message into a task: the
- * "task created" line is posted as a reply to that message.
+ * "task created" line is posted as a reply to that message. `parentTaskId` makes it a
+ * follow-up task of another task in the project; `steps` (a list of names) gives it its
+ * milestones in one go.
  */
 function actionCreateTask_(ctx, body) {
   var project = argProject_(body);
@@ -1108,6 +1126,8 @@ function actionCreateTask_(ctx, body) {
   var milestoneId = argMilestone_(body, project);
   var from = argRef_(body, 'fromMessageId', 'messages', project, 'The message');
   if (from && from.deleted === 'TRUE') throw apiError_('NOT_FOUND', 'The message was not found.');
+  var parent = argRef_(body, 'parentTaskId', 'tasks', project, 'The task this follows up');
+  var stepNames = argStepNames_(body);
   if (status === 'done') percent = 100;
 
   var now = now_();
@@ -1116,11 +1136,17 @@ function actionCreateTask_(ctx, body) {
     title: title, details: details, assigneeEmail: assignee, createdBy: ctx.email,
     status: status, percent: String(percent), priority: priority, dueDate: dueDate,
     createdAt: now, updatedAt: now, doneAt: status === 'done' ? now : '', categoryId: categoryId,
-    milestoneId: milestoneId
+    milestoneId: milestoneId, parentTaskId: parent ? parent.id : ''
   });
-  postEvent_(ctx, project, task, {
-    type: 'taskCreated', serial: task.serial, title: title, assigneeEmail: assignee, status: status, dueDate: dueDate
-  }, from ? from.id : '');
+  stepNames.forEach(function (name, i) {
+    insertRow_('steps', {
+      id: Utilities.getUuid(), projectId: project.id, taskId: task.id, name: name, position: String(i + 1),
+      reachedAt: '', reachedBy: '', createdBy: ctx.email, createdAt: now, updatedAt: now, deleted: ''
+    });
+  });
+  var created = { type: 'taskCreated', serial: task.serial, title: title, assigneeEmail: assignee, status: status, dueDate: dueDate };
+  if (parent) created.parentSerial = parent.serial;
+  postEvent_(ctx, project, task, created, from ? from.id : '');
   return taskView_(task);
 }
 
@@ -1326,6 +1352,140 @@ function actionDeleteFollowUp_(ctx, body) {
   }
   saveRow_('followups', f, { deleted: 'TRUE', updatedAt: now_() });
   return followUpView_(f);
+}
+
+// ---------------------------------------------------------------------------
+// Task milestones ("steps" in the Sheet) — an ordered list of stages inside one task.
+// Ticking one says the task has reached it; while a task has milestones its % is the share
+// reached. Whoever may change the task may change its milestones.
+// ---------------------------------------------------------------------------
+
+/** Optional list of milestone names for a new task: trimmed, blanks and repeats dropped. */
+function argStepNames_(body) {
+  var v = body.steps;
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) throw apiError_('BAD_REQUEST', '"steps" must be a list of names.');
+  var out = [];
+  v.forEach(function (n) {
+    if (typeof n !== 'string') throw apiError_('BAD_REQUEST', '"steps" must be a list of names.');
+    n = n.trim();
+    if (n.length > MAX_STEP) throw apiError_('BAD_REQUEST', 'A milestone name can be at most ' + MAX_STEP + ' characters.');
+    if (n && !out.some(function (o) { return sameName_(o, n); })) out.push(n);
+  });
+  if (out.length > MAX_STEPS) throw apiError_('BAD_REQUEST', 'A task can have at most ' + MAX_STEPS + ' milestones.');
+  return out;
+}
+
+function liveSteps_(projectId, taskId) {
+  return projectRows_('steps', projectId)
+    .filter(function (s) { return s.taskId === taskId && s.deleted !== 'TRUE'; })
+    .sort(function (a, b) { return (Number(a.position) || 0) - (Number(b.position) || 0); });
+}
+
+function editableTask_(ctx, project, taskId) {
+  var task = findInProject_('tasks', project.id, taskId);
+  if (!task) throw apiError_('NOT_FOUND', 'Task not found.');
+  if (!canEditTask_(ctx, project, task)) {
+    throw apiError_('FORBIDDEN', 'Only the person assigned, the person who made the task, the project lead or an admin can change its milestones.');
+  }
+  return task;
+}
+
+/**
+ * Brings the task's % in line with its milestones (not for a done task, which stays at 100) and
+ * moves a to-do task to "doing" once something is reached. Posts the change in the chat, naming
+ * the milestone just reached, if any.
+ */
+function syncStepProgress_(ctx, project, task, reachedName) {
+  if (task.status === 'done') return;
+  var steps = liveSteps_(project.id, task.id);
+  if (!steps.length) return;
+  var reached = steps.filter(function (s) { return s.reachedAt; }).length;
+  var changes = {};
+  var percent = String(Math.round(reached * 100 / steps.length));
+  if (percent !== String(Number(task.percent) || 0)) changes.percent = percent;
+  if (reached && task.status === 'todo') changes.status = 'doing';
+  if (!Object.keys(changes).length) return;
+  var news = {};
+  if (changes.status) news.status = { from: task.status, to: changes.status };
+  if (changes.percent) news.percent = { from: Number(task.percent) || 0, to: Number(changes.percent) };
+  changes.updatedAt = now_();
+  saveRow_('tasks', task, changes);
+  var event = { type: 'taskUpdated', serial: task.serial, title: task.title, assigneeEmail: '', changes: news };
+  if (reachedName) event.reachedStep = reachedName;
+  postEvent_(ctx, project, task, event);
+}
+
+function actionAddStep_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var task = editableTask_(ctx, project, body.taskId);
+  var name = argText_(body, 'name', MAX_STEP, true);
+  var steps = liveSteps_(project.id, task.id);
+  if (steps.some(function (s) { return sameName_(s.name, name); })) throw apiError_('CONFLICT', 'This task already has a milestone with that name.');
+  if (steps.length >= MAX_STEPS) throw apiError_('BAD_REQUEST', 'A task can have at most ' + MAX_STEPS + ' milestones.');
+  var last = steps.length ? Number(steps[steps.length - 1].position) || 0 : 0;
+  var now = now_();
+  var step = insertRow_('steps', {
+    id: Utilities.getUuid(), projectId: project.id, taskId: task.id, name: name, position: String(last + 1),
+    reachedAt: '', reachedBy: '', createdBy: ctx.email, createdAt: now, updatedAt: now, deleted: ''
+  });
+  syncStepProgress_(ctx, project, task, '');
+  return stepView_(step);
+}
+
+/** Change one milestone: `name`, `reached` (true/false), `move` ('up'/'down') or `deleted: true`. */
+function actionEditStep_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var step = findInProject_('steps', project.id, body.stepId);
+  if (!step || step.deleted === 'TRUE') throw apiError_('NOT_FOUND', 'Milestone not found.');
+  var task = editableTask_(ctx, project, step.taskId);
+  var now = now_();
+  var changes = {};
+
+  if (body.name !== undefined) {
+    var name = argText_(body, 'name', MAX_STEP, true);
+    if (name !== step.name) {
+      var clash = liveSteps_(project.id, task.id).some(function (s) { return s.id !== step.id && sameName_(s.name, name); });
+      if (clash) throw apiError_('CONFLICT', 'This task already has a milestone with that name.');
+      changes.name = name;
+    }
+  }
+  if (body.reached !== undefined) {
+    if (typeof body.reached !== 'boolean') throw apiError_('BAD_REQUEST', '"reached" must be true or false.');
+    if (body.reached && !step.reachedAt) { changes.reachedAt = now; changes.reachedBy = ctx.email; }
+    if (!body.reached && step.reachedAt) { changes.reachedAt = ''; changes.reachedBy = ''; }
+  }
+  if (body.deleted !== undefined) {
+    if (body.deleted !== true) throw apiError_('BAD_REQUEST', '"deleted" can only be true.');
+    changes.deleted = 'TRUE';
+  }
+  if (body.move !== undefined) {
+    if (body.move !== 'up' && body.move !== 'down') throw apiError_('BAD_REQUEST', '"move" must be "up" or "down".');
+    var list = liveSteps_(project.id, task.id);
+    var i = list.indexOf(step);
+    var j = body.move === 'up' ? i - 1 : i + 1;
+    if (j >= 0 && j < list.length) {
+      // Renumber the whole list so old gaps or ties never confuse the order.
+      list[i] = list[j];
+      list[j] = step;
+      list.forEach(function (s, k) {
+        if (s !== step && String(k + 1) !== String(s.position)) saveRow_('steps', s, { position: String(k + 1), updatedAt: now });
+      });
+      if (String(j + 1) !== String(step.position)) changes.position = String(j + 1);
+    }
+  }
+
+  if (!Object.keys(changes).length) return stepView_(step);
+  changes.updatedAt = now;
+  saveRow_('steps', step, changes);
+  if ('reachedAt' in changes || 'deleted' in changes) {
+    syncStepProgress_(ctx, project, task, changes.reachedAt ? (changes.name || step.name) : '');
+  }
+  return stepView_(step);
 }
 
 // ---------------------------------------------------------------------------
