@@ -4,6 +4,7 @@ import { TopNav, type Route } from './components/TopNav';
 import { useSession } from './hooks/useSession';
 import { useVisibleInterval } from './hooks/useVisibleInterval';
 import { errorText } from './lib/errors';
+import { Project } from './screens/Project';
 import { Projects } from './screens/Projects';
 import { SignIn } from './screens/SignIn';
 import { UsersAdmin } from './screens/UsersAdmin';
@@ -12,24 +13,31 @@ import type { User } from './types';
 
 const PENDING_CHECK_MS = 60 * 1000;
 
-function routeFromHash(): Route {
-  return window.location.hash === '#/users' ? 'users' : 'projects';
+interface Place { route: Route; projectId: string }
+
+/** `#/users`, `#/p/<project id>`, anything else = the projects list. */
+function placeFromHash(): Place {
+  const hash = window.location.hash;
+  if (hash === '#/users') return { route: 'users', projectId: '' };
+  const m = hash.match(/^#\/p\/([\w-]+)$/);
+  return { route: 'projects', projectId: m ? m[1] : '' };
 }
 
 /**
- * Sign in → (pending / blocked: Waiting) → Projects, plus Users for admins.
+ * Sign in → (pending / blocked: Waiting) → Projects → one project, plus Users for admins.
  * The route lives in the URL hash, which works on GitHub Pages without server rewrites.
  */
 export default function App() {
   const { t } = useTranslation();
   const session = useSession();
   const { phase, user, call, signOut } = session;
-  const [route, setRoute] = useState<Route>(routeFromHash);
+  const [place, setPlace] = useState<Place>(placeFromHash);
+  const { route, projectId } = place;
   const [pendingCount, setPendingCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
-    const onHash = () => setRoute(routeFromHash());
+    const onHash = () => setPlace(placeFromHash());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -38,6 +46,7 @@ export default function App() {
   const approved = phase === 'ready' && user?.status === 'approved';
   const isAdmin = approved && user?.role === 'admin';
   const screen: Route = route === 'users' && isAdmin ? 'users' : 'projects';
+  const inProject = approved && screen === 'projects' && !!projectId;
 
   // The badge on the Users tab. The Users screen keeps it current while it is open.
   const onUsers = useCallback((users: User[]) => setPendingCount(users.filter((u) => u.status === 'pending').length), []);
@@ -79,17 +88,21 @@ export default function App() {
     body = <Waiting user={user} onCheck={session.refreshMe} onSignOut={signOut} />;
   } else if (screen === 'users') {
     body = <UsersAdmin me={user} call={call} onUsers={onUsers} />;
+  } else if (projectId) {
+    body = <Project key={projectId} projectId={projectId} me={user} call={call} onBack={() => navigate('projects')} />;
   } else {
     body = <Projects user={user} call={call} />;
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    // In a project the page is exactly one screen tall: the chat scrolls, its message box stays put.
+    <div style={inProject ? { height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } : { minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <TopNav
         user={phase === 'ready' ? user : null}
         route={screen}
         onNavigate={approved ? navigate : undefined}
         pendingCount={pendingCount}
+        hideBottomNav={inProject}
         onSignOut={phase === 'signedOut' ? undefined : signOut}
       />
       {body}

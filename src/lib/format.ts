@@ -33,3 +33,30 @@ export function initials(name: string, email: string): string {
   const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? '?').slice(0, 2);
   return letters.toUpperCase();
 }
+
+/** "14:05" in the reader's language (Latin digits). */
+export function clockTime(iso: string, lang: Language): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return '';
+  return new Intl.DateTimeFormat(localeFor(lang), { hour: '2-digit', minute: '2-digit' }).format(ms);
+}
+
+/** The local calendar day of a time, YYYY-MM-DD. */
+export function localDay(iso: string | number): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** A chat day heading: "Today", "Yesterday", or the date. `today`/`yesterday` come translated. */
+export function dayLabel(iso: string, lang: Language, words: { today: string; yesterday: string }, now = Date.now()): string {
+  const day = localDay(iso);
+  if (day === localDay(now)) return words.today;
+  if (day === localDay(now - 24 * 60 * 60 * 1000)) return words.yesterday;
+  return new Intl.DateTimeFormat(localeFor(lang), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(Date.parse(iso));
+}
+
+/** "Ahmed Ali" from a member, else the part of the e-mail before @. */
+export function displayName(email: string, people: Map<string, { name: string }>): string {
+  return people.get(email.toLowerCase())?.name || email.split('@')[0] || email;
+}

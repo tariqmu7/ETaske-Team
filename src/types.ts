@@ -33,3 +33,108 @@ export interface Project {
   lastActivityAt: string;
   warnings?: string[];
 }
+
+export interface Member {
+  projectId: string;
+  email: string;
+  role: ProjectRole;
+  addedBy: string;
+  addedAt: string;
+  name: string;
+  photoUrl: string;
+  status: UserStatus | '';
+}
+
+export type TaskStatus = 'todo' | 'doing' | 'blocked' | 'done';
+export type TaskPriority = 'low' | 'normal' | 'high';
+
+export interface Task {
+  id: string;
+  projectId: string;
+  serial: string;
+  title: string;
+  details: string;
+  assigneeEmail: string;
+  createdBy: string;
+  status: TaskStatus;
+  percent: number;
+  priority: TaskPriority;
+  dueDate: string;
+  createdAt: string;
+  updatedAt: string;
+  doneAt: string;
+}
+
+interface Change<T> { from: T; to: T }
+
+/** A task line in chat. The server stores data; the app words it in the reader's language. */
+export interface TaskEvent {
+  type: 'taskCreated' | 'taskUpdated';
+  serial: string;
+  title: string;
+  assigneeEmail: string;
+  status?: TaskStatus;
+  dueDate?: string;
+  changes?: {
+    status?: Change<TaskStatus>;
+    percent?: Change<number>;
+    assigneeEmail?: Change<string>;
+  };
+}
+
+export interface Message {
+  id: string;
+  projectId: string;
+  authorEmail: string;
+  kind: 'text' | 'event';
+  text: string;
+  mentions: string[];
+  replyToId: string;
+  fileIds: string[];
+  taskId: string;
+  createdAt: string;
+  editedAt: string;
+  deleted: boolean;
+  event?: TaskEvent | null;
+}
+
+export interface DailyUpdate {
+  id: string;
+  projectId: string;
+  authorEmail: string;
+  date: string;
+  done: string;
+  remaining: string;
+  blockers: string;
+  taskIds: string[];
+  fileIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileItem {
+  id: string;
+  projectId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  uploaderEmail: string;
+  messageId: string;
+  updateId: string;
+  createdAt: string;
+  url: string;
+  /** Drive thumbnail for images; '' for other files. */
+  thumbnailUrl: string;
+}
+
+export interface SyncResult {
+  projectId: string;
+  next: string;
+  full: boolean;
+  hasMoreMessages: boolean;
+  lastReadAt: string;
+  messages: Message[];
+  tasks: Task[];
+  updates: DailyUpdate[];
+  files: FileItem[];
+}

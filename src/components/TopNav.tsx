@@ -13,11 +13,13 @@ interface Props {
   route?: Route;
   onNavigate?: (r: Route) => void;
   pendingCount?: number;
+  /** Inside a project the phone's bottom bar would sit on top of the message box. */
+  hideBottomNav?: boolean;
   onSignOut?: () => void;
 }
 
 /** Top bar on every screen; on a phone an admin also gets a bottom bar with the same tabs. */
-export function TopNav({ user, route, onNavigate, pendingCount = 0, onSignOut }: Props) {
+export function TopNav({ user, route, onNavigate, pendingCount = 0, hideBottomNav = false, onSignOut }: Props) {
   const { t } = useTranslation();
   const { isRtl, toggle: toggleLang } = useLanguage();
   const { isDark, toggle: toggleTheme } = useTheme();
@@ -71,7 +73,7 @@ export function TopNav({ user, route, onNavigate, pendingCount = 0, onSignOut }:
         </div>
       </header>
 
-      {tabs.length > 1 && (
+      {tabs.length > 1 && !hideBottomNav && (
         <nav className="bottom-nav" aria-label={t('Main navigation')}>
           {tabs.map(({ id, icon: Icon, label, badge }) => (
             <button key={id} className={`bottom-tab${route === id ? ' active' : ''}`} onClick={() => onNavigate?.(id)} aria-current={route === id ? 'page' : undefined}>

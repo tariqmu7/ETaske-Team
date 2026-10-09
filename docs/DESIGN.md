@@ -144,7 +144,7 @@ phone** in this version; unread badges in the app, and (optional, later) an e-ma
 4. Tariq: create the Sheet, paste the script, run `setup`, deploy the web app, set the two repo
    variables ✅
 5. Screens: sign in, waiting, projects, admin approvals ✅
-6. Screen: chat (polling, mentions, photos/files)
+6. Screen: chat (polling, mentions, photos/files) ✅
 7. Screens: tasks, updates, files, people
 8. Publish on Pages; live test with two Google accounts
 9. Short Arabic guide for the team

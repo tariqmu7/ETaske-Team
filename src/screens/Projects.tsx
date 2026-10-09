@@ -113,7 +113,7 @@ export function Projects({ user, call }: { user: User; call: Session['call'] }) 
       {projects !== null && projects.length > 0 && (
         <div className="card-grid">
           {projects.map((p) => (
-            <article key={p.id} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 132 }}>
+            <a key={p.id} href={`#/p/${p.id}`} className="card card-interactive" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 132, color: 'inherit', textDecoration: 'none' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                 <h2 dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'start' }}>{p.name}</h2>
                 {p.unread > 0 && (
@@ -136,7 +136,7 @@ export function Projects({ user, call }: { user: User; call: Session['call'] }) 
                 </span>
                 <span style={{ marginInlineStart: 'auto' }}>{t('Last activity {{when}}', { when: timeAgo(p.lastActivityAt, lang) })}</span>
               </div>
-            </article>
+            </a>
           ))}
         </div>
       )}
