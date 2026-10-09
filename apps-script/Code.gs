@@ -34,6 +34,7 @@ var TABLES = {
   tasks: ['id', 'projectId', 'serial', 'title', 'details', 'assigneeEmail', 'createdBy', 'status', 'percent', 'priority', 'dueDate', 'createdAt', 'updatedAt', 'doneAt', 'categoryId', 'milestoneId'],
   categories: ['id', 'projectId', 'name', 'createdBy', 'createdAt', 'updatedAt', 'deleted'],
   milestones: ['id', 'projectId', 'name', 'dueDate', 'createdBy', 'createdAt', 'updatedAt', 'deleted'],
+  followups: ['id', 'projectId', 'taskId', 'authorEmail', 'note', 'nextDate', 'createdAt', 'updatedAt', 'deleted'],
   updates: ['id', 'projectId', 'authorEmail', 'date', 'done', 'remaining', 'blockers', 'taskIds', 'fileIds', 'createdAt', 'updatedAt'],
   files: ['id', 'projectId', 'name', 'mimeType', 'size', 'uploaderEmail', 'messageId', 'updateId', 'createdAt'],
   reads: ['email', 'projectId', 'lastReadAt'],
@@ -52,6 +53,8 @@ var MAX_CATEGORY = 60;
 var MAX_CATEGORIES = 100;    // per project
 var MAX_MILESTONE = 100;
 var MAX_MILESTONES = 100;    // per project
+var MAX_FOLLOWUP = 2000;
+var MAX_FOLLOWUPS = 200;     // per task
 var MAX_DESCRIPTION = 2000;
 var MAX_TEXT = 4000;
 var MAX_TITLE = 200;
@@ -195,6 +198,8 @@ var ACTIONS = {
   editCategory: { who: 'approved', write: true, fn: actionEditCategory_ },
   addMilestone: { who: 'approved', write: true, fn: actionAddMilestone_ },
   editMilestone: { who: 'approved', write: true, fn: actionEditMilestone_ },
+  addFollowUp: { who: 'approved', write: true, fn: actionAddFollowUp_ },
+  deleteFollowUp: { who: 'approved', write: true, fn: actionDeleteFollowUp_ },
   postUpdate: { who: 'approved', write: true, fn: actionPostUpdate_ },
   // Not `write`: the Drive upload runs outside the lock; only the Sheet row is written under it.
   uploadFile: { who: 'approved', fn: actionUploadFile_ },
@@ -887,6 +892,13 @@ function milestoneView_(m) {
   return { id: m.id, projectId: m.projectId, name: m.name, dueDate: m.dueDate, createdBy: m.createdBy, createdAt: m.createdAt, updatedAt: m.updatedAt, deleted: m.deleted === 'TRUE' };
 }
 
+function followUpView_(f) {
+  return {
+    id: f.id, projectId: f.projectId, taskId: f.taskId, authorEmail: f.authorEmail, note: f.note, nextDate: f.nextDate,
+    createdAt: f.createdAt, updatedAt: f.updatedAt, deleted: f.deleted === 'TRUE'
+  };
+}
+
 function updateView_(u) {
   var out = strip_(u);
   out.taskIds = cellList_(u.taskIds);
@@ -943,7 +955,9 @@ function actionSync_(ctx, body) {
   var files = projectRows_('files', project.id);
   var categories = projectRows_('categories', project.id);
   var milestones = projectRows_('milestones', project.id);
+  var followUps = projectRows_('followups', project.id);
   if (since) {
+    followUps = followUps.filter(function (f) { return f.updatedAt > since; });
     categories = categories.filter(function (c) { return c.updatedAt > since; });
     milestones = milestones.filter(function (m) { return m.updatedAt > since; });
     tasks = tasks.filter(function (x) { return x.updatedAt > since; });
@@ -969,7 +983,8 @@ function actionSync_(ctx, body) {
     updates: updates.sort(byCreated_).map(updateView_),
     files: files.sort(byCreated_).map(fileView_),
     categories: categories.sort(byCreated_).map(categoryView_),
-    milestones: milestones.sort(byCreated_).map(milestoneView_)
+    milestones: milestones.sort(byCreated_).map(milestoneView_),
+    followUps: followUps.sort(byCreated_).map(followUpView_)
   };
 }
 
@@ -1273,6 +1288,44 @@ function actionEditMilestone_(ctx, body) {
   changes.updatedAt = now_();
   saveRow_('milestones', ms, changes);
   return milestoneView_(ms);
+}
+
+// ---------------------------------------------------------------------------
+// Follow-ups — a dated log on each task: what was chased, by whom, and when to chase next.
+// Anyone in the project may add one (a lead chasing a member, or a member chasing a
+// supplier). The newest entry's `nextDate` is the task's next follow-up; an entry without
+// one means nothing is pending. Not chat news: the log lives on the task.
+// ---------------------------------------------------------------------------
+
+function actionAddFollowUp_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var task = findInProject_('tasks', project.id, body.taskId);
+  if (!task) throw apiError_('NOT_FOUND', 'Task not found.');
+  var note = argText_(body, 'note', MAX_FOLLOWUP, true);
+  var nextDate = argDate_(body, 'nextDate', false);
+  var count = projectRows_('followups', project.id).filter(function (f) { return f.taskId === task.id && f.deleted !== 'TRUE'; }).length;
+  if (count >= MAX_FOLLOWUPS) throw apiError_('BAD_REQUEST', 'This task already has ' + MAX_FOLLOWUPS + ' follow-ups.');
+  var now = now_();
+  return followUpView_(insertRow_('followups', {
+    id: Utilities.getUuid(), projectId: project.id, taskId: task.id, authorEmail: ctx.email, note: note,
+    nextDate: nextDate, createdAt: now, updatedAt: now, deleted: ''
+  }));
+}
+
+/** The writer, the project lead or an admin removes an entry (kept in the Sheet, marked deleted). */
+function actionDeleteFollowUp_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var f = findInProject_('followups', project.id, body.followUpId);
+  if (!f || f.deleted === 'TRUE') throw apiError_('NOT_FOUND', 'Follow-up not found.');
+  if (normEmail_(f.authorEmail) !== ctx.email && !canManageProject_(ctx, project)) {
+    throw apiError_('FORBIDDEN', 'Only the person who wrote it, the project lead or an admin can remove a follow-up.');
+  }
+  saveRow_('followups', f, { deleted: 'TRUE', updatedAt: now_() });
+  return followUpView_(f);
 }
 
 // ---------------------------------------------------------------------------

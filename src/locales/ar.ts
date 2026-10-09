@@ -324,6 +324,26 @@ const ar: Record<keyof typeof en, string> = {
   "Only the project lead or an admin can add, change or remove a milestone.": "لا يضيف المرحلة أو يعدّلها أو يحذفها إلا قائد المشروع أو مدير النظام.",
   "The checkpoints of this project. Link tasks to a milestone; its progress is the average of those tasks.": "المحطات الرئيسية لهذا المشروع: اربط كل مهمة بمرحلتها، وتُحسب نسبة إنجاز المرحلة من متوسط إنجاز مهامها.",
   "The checkpoints of this project. Its progress is the average of the tasks linked to it; the project lead keeps this list.": "المحطات الرئيسية لهذا المشروع: تُحسب نسبة إنجاز كل مرحلة من متوسط إنجاز المهام المرتبطة بها، ويتولى قائد المشروع إدارة القائمة.",
+  // Follow-ups
+  "Follow-ups": "المتابعات",
+  "Follow up today": "تابِع اليوم",
+  "Follow up {{date}}": "متابعة {{date}}",
+  "Next follow-up {{date}}": "المتابعة القادمة {{date}}",
+  "Follow-up overdue since {{date}}": "متابعة متأخرة منذ {{date}}",
+  "Follow-ups due ({{count}})": "متابعات حان موعدها ({{count}})",
+  "Tasks whose follow-up day is today or has passed": "مهام حلّ موعد متابعتها اليوم أو فات",
+  "Write what was done or agreed.": "اكتب ما أُنجز أو ما اتُّفق عليه.",
+  "What was done or agreed": "ما أُنجز أو ما اتُّفق عليه",
+  "What was done or agreed, e.g. \"Called the supplier, quote by Thursday\"": "ما أُنجز أو ما اتُّفق عليه، مثل: «اتصلت بالمورّد، وسيصل العرض الخميس»",
+  "Next follow-up (optional)": "موعد المتابعة القادمة (اختياري)",
+  "Add follow-up": "أضف متابعة",
+  "No follow-ups yet. Note each call, visit or reminder here with the day to chase next.": "لا متابعات بعد. سجّل هنا كل اتصال أو زيارة أو تذكير، مع موعد المتابعة التالية.",
+  "No follow-ups yet.": "لا متابعات بعد.",
+  "Next: {{date}}": "التالية: {{date}}",
+  "Remove this follow-up?": "أتحذف هذه المتابعة؟",
+  "Remove this follow-up": "احذف هذه المتابعة",
+  "Only the person who wrote it, the project lead or an admin can remove a follow-up.": "لا يحذف المتابعة إلا كاتبها أو قائد المشروع أو مدير النظام.",
+  "This follow-up was already removed.": "حُذفت هذه المتابعة من قبل.",
 };
 
 export default ar;

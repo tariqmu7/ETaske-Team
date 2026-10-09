@@ -323,6 +323,26 @@ const en = {
   "Only the project lead or an admin can add, change or remove a milestone.": "Only the project lead or an admin can add, change or remove a milestone.",
   "The checkpoints of this project. Link tasks to a milestone; its progress is the average of those tasks.": "The checkpoints of this project. Link tasks to a milestone; its progress is the average of those tasks.",
   "The checkpoints of this project. Its progress is the average of the tasks linked to it; the project lead keeps this list.": "The checkpoints of this project. Its progress is the average of the tasks linked to it; the project lead keeps this list.",
+  // Follow-ups
+  "Follow-ups": "Follow-ups",
+  "Follow up today": "Follow up today",
+  "Follow up {{date}}": "Follow up {{date}}",
+  "Next follow-up {{date}}": "Next follow-up {{date}}",
+  "Follow-up overdue since {{date}}": "Follow-up overdue since {{date}}",
+  "Follow-ups due ({{count}})": "Follow-ups due ({{count}})",
+  "Tasks whose follow-up day is today or has passed": "Tasks whose follow-up day is today or has passed",
+  "Write what was done or agreed.": "Write what was done or agreed.",
+  "What was done or agreed": "What was done or agreed",
+  "What was done or agreed, e.g. \"Called the supplier, quote by Thursday\"": "What was done or agreed, e.g. \"Called the supplier, quote by Thursday\"",
+  "Next follow-up (optional)": "Next follow-up (optional)",
+  "Add follow-up": "Add follow-up",
+  "No follow-ups yet. Note each call, visit or reminder here with the day to chase next.": "No follow-ups yet. Note each call, visit or reminder here with the day to chase next.",
+  "No follow-ups yet.": "No follow-ups yet.",
+  "Next: {{date}}": "Next: {{date}}",
+  "Remove this follow-up?": "Remove this follow-up?",
+  "Remove this follow-up": "Remove this follow-up",
+  "Only the person who wrote it, the project lead or an admin can remove a follow-up.": "Only the person who wrote it, the project lead or an admin can remove a follow-up.",
+  "This follow-up was already removed.": "This follow-up was already removed.",
 };
 
 export default en;

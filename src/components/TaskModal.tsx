@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { CategoryPicker } from './CategoryPicker';
+import { FollowUpLog } from './FollowUpLog';
 import { useLanguage } from '../hooks/useLanguage';
 import type { Session } from '../hooks/useSession';
 import { errorText } from '../lib/errors';
@@ -11,7 +12,7 @@ import { displayName, shortDate, timeAgo } from '../lib/format';
 import {
   MAX_TASK_TEXT, MAX_TASK_TITLE, TASK_PRIORITIES, TASK_STATUSES, taskPriorityLabel, taskStatusLabel,
 } from '../lib/tasks';
-import type { Category, Member, Milestone, Task, TaskPriority, TaskStatus } from '../types';
+import type { Category, FollowUp, Member, Milestone, Task, TaskPriority, TaskStatus } from '../types';
 
 /** What a new task starts with — e.g. a chat message being turned into a task. */
 export interface TaskSeed {
@@ -40,6 +41,14 @@ interface Props {
   milestones: Milestone[];
   /** False: the form is shown read-only, with the reason. */
   canEdit: boolean;
+  /** An existing task's follow-up log (Tasks tab). Anyone in the project may add to it, even when canEdit is false. */
+  followUp?: {
+    followUps: FollowUp[];
+    myEmail: string;
+    canAdd: boolean;
+    canManage: boolean;
+    onChanged: (f: FollowUp) => void;
+  };
   onSaved: (task: Task) => void;
   onClose: () => void;
 }
@@ -72,7 +81,7 @@ function fieldsOf(task: Task | null, seed: TaskSeed | undefined): Fields {
 }
 
 /** New task, or one task's details. Saves only the fields that changed. */
-export function TaskModal({ projectId, call, members, people, task, seed, categories, onCategoryAdded, milestones, canEdit, onSaved, onClose }: Props) {
+export function TaskModal({ projectId, call, members, people, task, seed, categories, onCategoryAdded, milestones, canEdit, followUp, onSaved, onClose }: Props) {
   const { t } = useTranslation();
   const { lang } = useLanguage();
   // Frozen at opening: a sync that changes the task meanwhile must not make
@@ -228,6 +237,9 @@ export function TaskModal({ projectId, call, members, people, task, seed, catego
           <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>
             {t('Made by {{name}}, {{when}}', { name: displayName(task.createdBy, people), when: timeAgo(task.createdAt, lang) })}
           </p>
+        )}
+        {task && followUp && (
+          <FollowUpLog projectId={projectId} call={call} task={task} people={people} {...followUp} />
         )}
         {!task && seed?.fromMessageId && (
           <p className="text-muted" style={{ fontSize: 12, marginTop: 10 }}>{t('A line about the new task is posted in the chat as a reply to the message.')}</p>

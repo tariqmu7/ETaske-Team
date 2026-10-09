@@ -1,6 +1,6 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarClock, ChevronDown, ClipboardList, Flag, Plus, Tags } from 'lucide-react';
+import { BellRing, CalendarClock, ChevronDown, ClipboardList, Flag, Plus, Tags } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
 import { CategoriesModal } from '../components/CategoriesModal';
 import { MilestoneMeter, MilestonesModal } from '../components/MilestonesModal';
@@ -9,6 +9,7 @@ import { useLanguage } from '../hooks/useLanguage';
 import type { Session } from '../hooks/useSession';
 import type { useProjectSync } from '../hooks/useProjectSync';
 import { categoryHue, categoryOf, liveCategories } from '../lib/categories';
+import { followUpState, nextFollowUps } from '../lib/followups';
 import { liveMilestones, milestoneOf, milestoneProgress } from '../lib/milestones';
 import { displayName, localDay, shortDate } from '../lib/format';
 import { canEditTask, compareTasks, isLate, taskPriorityLabel, taskStatusClass, taskStatusLabel } from '../lib/tasks';
@@ -49,6 +50,7 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
   const { lang } = useLanguage();
   const myEmail = me.email.toLowerCase();
   const [onlyMine, setOnlyMine] = useState(false);
+  const [onlyChase, setOnlyChase] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);   // '' = new task
   const [catFilter, setCatFilter] = useState(ALL);
@@ -69,7 +71,14 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
   const assignable = useMemo(() => members.filter((m) => m.status !== 'blocked'), [members]);
 
   const all = sync.tasks;
-  const mine = onlyMine ? all.filter((x) => x.assigneeEmail.toLowerCase() === myEmail) : all;
+  /** Task id → its pending follow-up day (open tasks only). */
+  const chase = useMemo(() => nextFollowUps(sync.followUps, all), [sync.followUps, all]);
+  const isDue = (task: Task) => { const d = chase.get(task.id); return !!d && d <= today; };
+  const byMe = onlyMine ? all.filter((x) => x.assigneeEmail.toLowerCase() === myEmail) : all;
+  const dueCount = byMe.filter(isDue).length;
+  // The switch turns itself off once nothing is left to chase, so the list never looks empty for no reason.
+  const chaseOn = onlyChase && dueCount > 0;
+  const mine = chaseOn ? byMe.filter(isDue) : byMe;
   // A category removed meanwhile (by someone else) falls back to "all".
   const filter = catFilter === ALL || catFilter === '' || live.some((c) => c.id === catFilter) ? catFilter : ALL;
   const msFilt = msFilter === ALL || msFilter === '' || liveStones.some((m) => m.id === msFilter) ? msFilter : ALL;
@@ -128,6 +137,15 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
           {lateCount > 0 && <span className="pane-stat-late"><strong>{lateCount}</strong> {t('late')}</span>}
           <span><strong>{doneCount}</strong> {t('done')}</span>
         </div>
+        {(dueCount > 0 || chaseOn) && (
+          <button
+            type="button" className={`fu-filter${chaseOn ? ' active' : ''}`} aria-pressed={chaseOn} onClick={() => setOnlyChase((v) => !v)}
+            title={t('Tasks whose follow-up day is today or has passed')}
+          >
+            <BellRing style={{ width: 14, height: 14 }} aria-hidden="true" />
+            {t('Follow-ups due ({{count}})', { count: dueCount })}
+          </button>
+        )}
         <div className="seg" role="group" aria-label={t('Show')}>
           <button type="button" className={!onlyMine ? 'active' : ''} aria-pressed={!onlyMine} onClick={() => setOnlyMine(false)}>{t('Everyone')}</button>
           <button type="button" className={onlyMine ? 'active' : ''} aria-pressed={onlyMine} onClick={() => setOnlyMine(true)}>{t('Mine')}</button>
@@ -222,9 +240,11 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
               {g.tasks.map((task) => {
                 const late = isLate(task, today);
                 const cat = byCategory ? null : categoryOf(cats, task.categoryId);
+                const fuDay = chase.get(task.id);
+                const fu = fuDay ? followUpState(fuDay, today) : null;
                 return (
                   <li key={task.id}>
-                    <button type="button" className={`tk-row${late ? ' late' : ''}${task.status === 'done' ? ' done' : ''}`} onClick={() => setOpenId(task.id)}>
+                    <button type="button" className={`tk-row${late ? ' late' : ''}${fu === 'overdue' ? ' fu-overdue' : ''}${task.status === 'done' ? ' done' : ''}`} onClick={() => setOpenId(task.id)}>
                       <span className="tk-row-top">
                         <span className="task-serial ltr-data">{task.serial}</span>
                         <bdi className="task-title">{task.title}</bdi>
@@ -238,6 +258,14 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
                           <span className={`task-due${late ? ' late' : ''}`}>
                             <CalendarClock style={{ width: 13, height: 13 }} />
                             {late ? t('Late, was due {{date}}', { date: shortDate(task.dueDate, lang) }) : t('Due {{date}}', { date: shortDate(task.dueDate, lang) })}
+                          </span>
+                        )}
+                        {fuDay && fu && (
+                          <span className={`fu-chip ${fu}`}>
+                            <BellRing style={{ width: 12, height: 12 }} aria-hidden="true" />
+                            {fu === 'overdue' ? t('Follow-up overdue since {{date}}', { date: shortDate(fuDay, lang) })
+                              : fu === 'today' ? t('Follow up today')
+                              : t('Follow up {{date}}', { date: shortDate(fuDay, lang) })}
                           </span>
                         )}
                         <span className="task-percent">
@@ -276,6 +304,7 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
           onCategoryAdded={sync.putCategory}
           milestones={stones}
           canEdit={!archived && (!opened || canEditTask(opened, me, isLead))}
+          followUp={{ followUps: sync.followUps, myEmail, canAdd: !archived, canManage, onChanged: sync.putFollowUp }}
           onSaved={onSaved}
           onClose={() => setOpenId(null)}
         />

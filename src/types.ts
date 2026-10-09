@@ -95,6 +95,20 @@ export interface Milestone {
   deleted: boolean;
 }
 
+/** One entry in a task's follow-up log. The newest live entry's `nextDate` is the task's next follow-up. */
+export interface FollowUp {
+  id: string;
+  projectId: string;
+  taskId: string;
+  authorEmail: string;
+  note: string;
+  /** YYYY-MM-DD, or '' = nothing more to chase. */
+  nextDate: string;
+  createdAt: string;
+  updatedAt: string;
+  deleted: boolean;
+}
+
 interface Change<T> { from: T; to: T }
 
 /** A task line in chat. The server stores data; the app words it in the reader's language. */
@@ -169,4 +183,5 @@ export interface SyncResult {
   files: FileItem[];
   categories?: Category[];
   milestones?: Milestone[];
+  followUps?: FollowUp[];
 }
