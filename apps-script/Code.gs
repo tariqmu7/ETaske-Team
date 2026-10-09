@@ -2,7 +2,7 @@
  * ETaske Team — back end (Google Apps Script, bound to the data Sheet).
  *
  * Part 1: setup, sign-in check, users + approval, projects, members, Drive folders.
- * Part 2 (messages, tasks, updates, uploads, sync, reads) adds its handlers to ACTIONS.
+ * Part 2: messages, tasks, daily updates, uploads, sync, reads.
  *
  * The full design is docs/DESIGN.md in the repo. Every call is
  *   POST <web app URL>   body (text/plain): {"action": "...", "idToken": "...", ...args}
@@ -30,9 +30,9 @@ var TABLES = {
   users: ['email', 'name', 'photoUrl', 'role', 'status', 'createdAt', 'approvedBy', 'lastSeenAt'],
   projects: ['id', 'name', 'description', 'folderId', 'createdBy', 'createdAt', 'archived'],
   members: ['projectId', 'email', 'role', 'addedBy', 'addedAt'],
-  messages: ['id', 'projectId', 'authorEmail', 'text', 'mentions', 'replyToId', 'fileIds', 'taskId', 'createdAt', 'editedAt', 'deleted'],
+  messages: ['id', 'projectId', 'authorEmail', 'text', 'mentions', 'replyToId', 'fileIds', 'taskId', 'createdAt', 'editedAt', 'deleted', 'kind'],
   tasks: ['id', 'projectId', 'serial', 'title', 'details', 'assigneeEmail', 'createdBy', 'status', 'percent', 'priority', 'dueDate', 'createdAt', 'updatedAt', 'doneAt'],
-  updates: ['id', 'projectId', 'authorEmail', 'date', 'done', 'remaining', 'blockers', 'taskIds', 'fileIds', 'createdAt'],
+  updates: ['id', 'projectId', 'authorEmail', 'date', 'done', 'remaining', 'blockers', 'taskIds', 'fileIds', 'createdAt', 'updatedAt'],
   files: ['id', 'projectId', 'name', 'mimeType', 'size', 'uploaderEmail', 'messageId', 'updateId', 'createdAt'],
   reads: ['email', 'projectId', 'lastReadAt'],
   meta: ['key', 'value']
@@ -42,8 +42,20 @@ var USER_ROLES = ['admin', 'member'];
 var USER_STATUSES = ['pending', 'approved', 'blocked'];
 var MEMBER_ROLES = ['lead', 'member'];
 
+var TASK_STATUSES = ['todo', 'doing', 'blocked', 'done'];
+var TASK_PRIORITIES = ['low', 'normal', 'high'];
+
 var MAX_NAME = 100;
 var MAX_DESCRIPTION = 2000;
+var MAX_TEXT = 4000;
+var MAX_TITLE = 200;
+var MAX_FILE_NAME = 200;
+var MAX_LIST = 20;           // files / tasks attached to one message or update
+var MAX_MENTIONS = 50;
+var MAX_UPLOAD_CHARS = 20 * 1024 * 1024;  // base64 text, i.e. ~15 MB of file
+var MESSAGE_PAGE = 200;      // messages in a first sync / one listMessages page
+var UPDATE_DAYS = 30;        // days of daily updates in a first sync
+var SYNC_OVERLAP_MS = 30000; // re-send the last 30 s so a row saved during a sync is never missed
 var LAST_SEEN_EVERY_MS = 5 * 60 * 1000;
 var LOCK_WAIT_MS = 20000;
 
@@ -165,7 +177,18 @@ var ACTIONS = {
   archiveProject: { who: 'admin', write: true, fn: actionArchiveProject_ },
   listMembers: { who: 'approved', fn: actionListMembers_ },
   addMember: { who: 'approved', write: true, fn: actionAddMember_ },
-  removeMember: { who: 'approved', write: true, fn: actionRemoveMember_ }
+  removeMember: { who: 'approved', write: true, fn: actionRemoveMember_ },
+  sync: { who: 'approved', fn: actionSync_ },
+  listMessages: { who: 'approved', fn: actionListMessages_ },
+  postMessage: { who: 'approved', write: true, fn: actionPostMessage_ },
+  editMessage: { who: 'approved', write: true, fn: actionEditMessage_ },
+  deleteMessage: { who: 'approved', write: true, fn: actionDeleteMessage_ },
+  createTask: { who: 'approved', write: true, fn: actionCreateTask_ },
+  updateTask: { who: 'approved', write: true, fn: actionUpdateTask_ },
+  postUpdate: { who: 'approved', write: true, fn: actionPostUpdate_ },
+  // Not `write`: the Drive upload runs outside the lock; only the Sheet row is written under it.
+  uploadFile: { who: 'approved', fn: actionUploadFile_ },
+  markRead: { who: 'approved', write: true, fn: actionMarkRead_ }
 };
 
 function handle_(body) {
@@ -269,7 +292,7 @@ function table_(name) {
   var rows = [];
   for (var r = 1; r < values.length; r++) {
     var obj = { _row: r + 1 };
-    for (var c = 0; c < headers.length; c++) obj[headers[c]] = values[r][c] === null || values[r][c] === undefined ? '' : String(values[r][c]);
+    for (var c = 0; c < headers.length; c++) obj[headers[c]] = values[r][c] === null || values[r][c] === undefined ? '' : unguard_(String(values[r][c]));
     rows.push(obj);
   }
   memo_[name] = { sheet: sheet, headers: headers, rows: rows };
@@ -279,9 +302,19 @@ function table_(name) {
 function rowValues_(t, obj) {
   return t.headers.map(function (h) {
     var v = obj[h];
-    return v === null || v === undefined ? '' : String(v);
+    return v === null || v === undefined ? '' : guard_(String(v));
   });
 }
+
+/**
+ * Typed text such as "=IMPORTDATA(...)" must never become a live formula in Tariq's Sheet.
+ * An invisible zero-width space in front keeps it as text (Sheets leaves that character
+ * alone, unlike a leading apostrophe); it is taken off again when the row is read.
+ */
+var GUARD_MARK = '​';
+var GUARD_NEEDED_RE = /^[=+\-​]/;
+function guard_(s) { return GUARD_NEEDED_RE.test(s) ? GUARD_MARK + s : s; }
+function unguard_(s) { return s.charAt(0) === GUARD_MARK ? s.slice(1) : s; }
 
 function insertRow_(name, obj) {
   var t = table_(name);
@@ -685,4 +718,485 @@ function unshareFolder_(folderId, email) {
     console.warn('Unshare failed ' + folderId + ' → ' + email + ': ' + e);
     return 'Could not remove ' + email + ' from the project files folder. Check its sharing in Drive.';
   }
+}
+
+// ===========================================================================
+// Part 2 — messages, tasks, daily updates, files, sync, reads
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+function cellList_(s) { return s ? String(s).split(',') : []; }
+
+function requireOpenProject_(project) {
+  if (project.archived === 'TRUE') throw apiError_('BAD_REQUEST', 'This project is archived.');
+}
+
+function projectRows_(name, projectId) {
+  return table_(name).rows.filter(function (r) { return r.projectId === projectId; });
+}
+
+/** A row of `name` in this project, or null. Ids from other projects are not found. */
+function findInProject_(name, projectId, id) {
+  if (typeof id !== 'string' || !id) return null;
+  return table_(name).rows.filter(function (r) { return r.id === id && r.projectId === projectId; })[0] || null;
+}
+
+/** Optional id argument that must name a row of `name` in this project. */
+function argRef_(body, key, name, project, what) {
+  var id = body[key];
+  if (id === undefined || id === null || id === '') return null;
+  var row = findInProject_(name, project.id, id);
+  if (!row) throw apiError_('NOT_FOUND', what + ' was not found.');
+  return row;
+}
+
+/** Optional list of ids that must all be rows of `name` in this project. */
+function argIdList_(body, key, name, project, max) {
+  var v = body[key];
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) throw apiError_('BAD_REQUEST', '"' + key + '" must be a list.');
+  if (v.length > max) throw apiError_('BAD_REQUEST', '"' + key + '" has too many items (max ' + max + ').');
+  var out = [];
+  v.forEach(function (id) {
+    if (!findInProject_(name, project.id, id)) throw apiError_('BAD_REQUEST', '"' + key + '" names something that is not in this project.');
+    if (out.indexOf(id) === -1) out.push(id);
+  });
+  return out;
+}
+
+/** @mentions: e-mails of project members only; anyone else is dropped. */
+function argMentions_(body, project) {
+  var v = body.mentions;
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length > MAX_MENTIONS) throw apiError_('BAD_REQUEST', '"mentions" must be a list of e-mails.');
+  var out = [];
+  v.forEach(function (e) {
+    var email = normEmail_(e);
+    if (findMember_(project.id, email) && out.indexOf(email) === -1) out.push(email);
+  });
+  return out;
+}
+
+var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** YYYY-MM-DD that is a real calendar day, or '' when optional and empty. */
+function argDate_(body, key, required) {
+  var v = body[key];
+  if (!required && (v === undefined || v === null || v === '')) return '';
+  if (typeof v !== 'string' || !DATE_RE.test(v) || isNaN(Date.parse(v + 'T00:00:00Z')) ||
+      new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) !== v) {
+    throw apiError_('BAD_REQUEST', '"' + key + '" must be a date like 2026-10-09.');
+  }
+  return v;
+}
+
+function argPercent_(body) {
+  var v = body.percent;
+  if (typeof v !== 'number' || !isFinite(v) || v < 0 || v > 100) throw apiError_('BAD_REQUEST', '"percent" must be a number from 0 to 100.');
+  return Math.round(v);
+}
+
+/** '' (nobody) or the e-mail of a member of this project. */
+function argAssignee_(body, project) {
+  var v = body.assigneeEmail;
+  if (v === undefined || v === null || v === '') return '';
+  var email = argEmail_(body, 'assigneeEmail');
+  if (!findMember_(project.id, email)) throw apiError_('BAD_REQUEST', 'The person you assign must be a member of this project.');
+  return email;
+}
+
+/** Sets messageId / updateId on files that are not linked to anything yet. */
+function linkFiles_(fileIds, field, value) {
+  fileIds.forEach(function (id) {
+    var f = table_('files').rows.filter(function (r) { return r.id === id; })[0];
+    if (!f || f[field]) return;
+    var change = {};
+    change[field] = value;
+    saveRow_('files', f, change);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// What the app receives
+// ---------------------------------------------------------------------------
+
+function messageView_(m) {
+  var deleted = m.deleted === 'TRUE';
+  var isEvent = m.kind === 'event';
+  var out = {
+    id: m.id, projectId: m.projectId, authorEmail: m.authorEmail,
+    kind: isEvent ? 'event' : 'text',
+    text: deleted || isEvent ? '' : m.text,
+    mentions: deleted ? [] : cellList_(m.mentions),
+    replyToId: m.replyToId, fileIds: deleted ? [] : cellList_(m.fileIds), taskId: m.taskId,
+    createdAt: m.createdAt, editedAt: m.editedAt, deleted: deleted
+  };
+  if (isEvent && !deleted) {
+    try { out.event = JSON.parse(m.text); } catch (e) { out.event = null; }
+  }
+  return out;
+}
+
+function taskView_(t) {
+  var out = strip_(t);
+  out.percent = Number(t.percent) || 0;
+  return out;
+}
+
+function updateView_(u) {
+  var out = strip_(u);
+  out.taskIds = cellList_(u.taskIds);
+  out.fileIds = cellList_(u.fileIds);
+  return out;
+}
+
+function fileView_(f) {
+  var out = strip_(f);
+  out.size = Number(f.size) || 0;
+  out.url = 'https://drive.google.com/file/d/' + f.id + '/view';
+  out.thumbnailUrl = /^image\//.test(f.mimeType) ? 'https://drive.google.com/thumbnail?id=' + f.id + '&sz=w800' : '';
+  return out;
+}
+
+/** The moment a row last changed — what `sync` compares with `since`. */
+function messageStamp_(m) { return m.editedAt > m.createdAt ? m.editedAt : m.createdAt; }
+function updateStamp_(u) { return u.updatedAt > u.createdAt ? u.updatedAt : u.createdAt; }
+
+function byCreated_(a, b) { return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0; }
+
+// ---------------------------------------------------------------------------
+// sync — everything in one project changed since `since`
+// ---------------------------------------------------------------------------
+
+/**
+ * First call (no `since`): all tasks and files, the last MESSAGE_PAGE messages and the last
+ * UPDATE_DAYS days of daily updates. Later calls: send back `next` as `since` and get only
+ * what changed. Each answer overlaps the previous one by SYNC_OVERLAP_MS (a row saved while
+ * a sync was reading is never lost), so the app merges rows by `id`, newer copy wins.
+ */
+function actionSync_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  var next = now_();
+  var since = '';
+  if (body.since !== undefined && body.since !== null && body.since !== '') {
+    var t = typeof body.since === 'string' ? Date.parse(body.since) : NaN;
+    if (isNaN(t)) throw apiError_('BAD_REQUEST', '"since" must be a time from a previous sync.');
+    since = new Date(t - SYNC_OVERLAP_MS).toISOString();
+  }
+
+  var messages = projectRows_('messages', project.id).sort(byCreated_);
+  var hasMoreMessages = false;
+  if (since) {
+    messages = messages.filter(function (m) { return messageStamp_(m) > since; });
+  } else if (messages.length > MESSAGE_PAGE) {
+    messages = messages.slice(-MESSAGE_PAGE);
+    hasMoreMessages = true;
+  }
+
+  var tasks = projectRows_('tasks', project.id);
+  var updates = projectRows_('updates', project.id);
+  var files = projectRows_('files', project.id);
+  if (since) {
+    tasks = tasks.filter(function (x) { return x.updatedAt > since; });
+    updates = updates.filter(function (u) { return updateStamp_(u) > since; });
+    files = files.filter(function (f) { return f.createdAt > since; });
+  } else {
+    var fromDay = new Date(Date.now() - UPDATE_DAYS * 86400000).toISOString().slice(0, 10);
+    updates = updates.filter(function (u) { return u.date >= fromDay; });
+  }
+
+  var read = table_('reads').rows.filter(function (r) {
+    return r.projectId === project.id && normEmail_(r.email) === ctx.email;
+  })[0];
+
+  return {
+    projectId: project.id,
+    next: next,
+    full: !since,
+    hasMoreMessages: hasMoreMessages,
+    lastReadAt: read ? read.lastReadAt : '',
+    messages: messages.map(messageView_),
+    tasks: tasks.sort(byCreated_).map(taskView_),
+    updates: updates.sort(byCreated_).map(updateView_),
+    files: files.sort(byCreated_).map(fileView_)
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+/** Older messages for scrolling up: the `limit` messages just before `before`. */
+function actionListMessages_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  if (typeof body.before !== 'string' || isNaN(Date.parse(body.before))) throw apiError_('BAD_REQUEST', '"before" must be a message time.');
+  var limit = body.limit === undefined ? 50 : body.limit;
+  if (typeof limit !== 'number' || !(limit >= 1 && limit <= MESSAGE_PAGE)) throw apiError_('BAD_REQUEST', '"limit" must be 1 to ' + MESSAGE_PAGE + '.');
+  limit = Math.floor(limit);
+  var older = projectRows_('messages', project.id)
+    .filter(function (m) { return m.createdAt < body.before; })
+    .sort(byCreated_);
+  return { messages: older.slice(-limit).map(messageView_), hasMore: older.length > limit };
+}
+
+function actionPostMessage_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var text = argText_(body, 'text', MAX_TEXT, false);
+  var fileIds = argIdList_(body, 'fileIds', 'files', project, MAX_LIST);
+  if (!text && !fileIds.length) throw apiError_('BAD_REQUEST', 'Write a message or attach a file.');
+  var replyTo = argRef_(body, 'replyToId', 'messages', project, 'The message you are replying to');
+  var task = argRef_(body, 'taskId', 'tasks', project, 'The task');
+
+  var msg = insertRow_('messages', {
+    id: Utilities.getUuid(), projectId: project.id, authorEmail: ctx.email, text: text,
+    mentions: argMentions_(body, project).join(','), replyToId: replyTo ? replyTo.id : '',
+    fileIds: fileIds.join(','), taskId: task ? task.id : '',
+    createdAt: now_(), editedAt: '', deleted: '', kind: ''
+  });
+  linkFiles_(fileIds, 'messageId', msg.id);
+  return messageView_(msg);
+}
+
+/** The message named by `messageId`, checked: it exists, is not deleted, the caller may change it. */
+function ownMessage_(ctx, body, project) {
+  var msg = findInProject_('messages', project.id, body.messageId);
+  if (!msg || msg.deleted === 'TRUE') throw apiError_('NOT_FOUND', 'Message not found.');
+  if (normEmail_(msg.authorEmail) !== ctx.email && !ctx.isAdmin) {
+    throw apiError_('FORBIDDEN', 'Only the person who wrote a message (or an admin) can change it.');
+  }
+  return msg;
+}
+
+function actionEditMessage_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var msg = ownMessage_(ctx, body, project);
+  if (msg.kind === 'event') throw apiError_('FORBIDDEN', 'Task lines cannot be edited.');
+  var text = argText_(body, 'text', MAX_TEXT, false);
+  if (!text && !msg.fileIds) throw apiError_('BAD_REQUEST', 'A message without a file needs some text. Delete it instead.');
+  var changes = { text: text, editedAt: now_() };
+  if (body.mentions !== undefined) changes.mentions = argMentions_(body, project).join(',');
+  saveRow_('messages', msg, changes);
+  return messageView_(msg);
+}
+
+/** Hidden from everyone in the app; the text stays in the Sheet for the record. */
+function actionDeleteMessage_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  var msg = ownMessage_(ctx, body, project);
+  if (msg.kind === 'event' && !ctx.isAdmin) throw apiError_('FORBIDDEN', 'Only an admin can remove a task line.');
+  saveRow_('messages', msg, { deleted: 'TRUE', editedAt: now_() });
+  return messageView_(msg);
+}
+
+/** A short chat line about a task. The text is data; the app words it in the reader's language. */
+function postEvent_(ctx, project, task, event, replyToId) {
+  return insertRow_('messages', {
+    id: Utilities.getUuid(), projectId: project.id, authorEmail: ctx.email,
+    text: JSON.stringify(event), mentions: event.assigneeEmail || '', replyToId: replyToId || '',
+    fileIds: '', taskId: task.id, createdAt: now_(), editedAt: '', deleted: '', kind: 'event'
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+/** T-001, T-002 … counted per project in the `meta` tab. */
+function nextSerial_(projectId) {
+  var key = 'taskSerial:' + projectId;
+  var row = table_('meta').rows.filter(function (r) { return r.key === key; })[0];
+  var n = (row ? parseInt(row.value, 10) || 0 : 0) + 1;
+  if (row) saveRow_('meta', row, { value: String(n) });
+  else insertRow_('meta', { key: key, value: String(n) });
+  return 'T-' + (n < 1000 ? ('00' + n).slice(-3) : String(n));
+}
+
+/** Admins, the project lead, whoever made the task and whoever it is assigned to. */
+function canEditTask_(ctx, project, task) {
+  return canManageProject_(ctx, project) ||
+    normEmail_(task.createdBy) === ctx.email || normEmail_(task.assigneeEmail) === ctx.email;
+}
+
+/**
+ * Any member may create a task. `fromMessageId` turns a chat message into a task: the
+ * "task created" line is posted as a reply to that message.
+ */
+function actionCreateTask_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var title = argText_(body, 'title', MAX_TITLE, true);
+  var details = argText_(body, 'details', MAX_TEXT, false);
+  var assignee = argAssignee_(body, project);
+  var status = body.status === undefined ? 'todo' : argEnum_(body, 'status', TASK_STATUSES);
+  var priority = body.priority === undefined ? 'normal' : argEnum_(body, 'priority', TASK_PRIORITIES);
+  var percent = body.percent === undefined ? 0 : argPercent_(body);
+  var dueDate = argDate_(body, 'dueDate', false);
+  var from = argRef_(body, 'fromMessageId', 'messages', project, 'The message');
+  if (from && from.deleted === 'TRUE') throw apiError_('NOT_FOUND', 'The message was not found.');
+  if (status === 'done') percent = 100;
+
+  var now = now_();
+  var task = insertRow_('tasks', {
+    id: Utilities.getUuid(), projectId: project.id, serial: nextSerial_(project.id),
+    title: title, details: details, assigneeEmail: assignee, createdBy: ctx.email,
+    status: status, percent: String(percent), priority: priority, dueDate: dueDate,
+    createdAt: now, updatedAt: now, doneAt: status === 'done' ? now : ''
+  });
+  postEvent_(ctx, project, task, {
+    type: 'taskCreated', serial: task.serial, title: title, assigneeEmail: assignee, status: status, dueDate: dueDate
+  }, from ? from.id : '');
+  return taskView_(task);
+}
+
+function actionUpdateTask_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var task = findInProject_('tasks', project.id, body.taskId);
+  if (!task) throw apiError_('NOT_FOUND', 'Task not found.');
+  if (!canEditTask_(ctx, project, task)) {
+    throw apiError_('FORBIDDEN', 'Only the person assigned, the person who made the task, the project lead or an admin can change it.');
+  }
+
+  var next = {};
+  if (body.title !== undefined) next.title = argText_(body, 'title', MAX_TITLE, true);
+  if (body.details !== undefined) next.details = argText_(body, 'details', MAX_TEXT, false);
+  if (body.assigneeEmail !== undefined) next.assigneeEmail = argAssignee_(body, project);
+  if (body.status !== undefined) next.status = argEnum_(body, 'status', TASK_STATUSES);
+  if (body.percent !== undefined) next.percent = String(argPercent_(body));
+  if (body.priority !== undefined) next.priority = argEnum_(body, 'priority', TASK_PRIORITIES);
+  if (body.dueDate !== undefined) next.dueDate = argDate_(body, 'dueDate', false);
+
+  var now = now_();
+  if (next.status === 'done' && task.status !== 'done') { next.doneAt = now; next.percent = '100'; }
+  if (next.status && next.status !== 'done' && task.status === 'done') next.doneAt = '';
+
+  var changes = {};
+  Object.keys(next).forEach(function (k) { if (next[k] !== task[k]) changes[k] = next[k]; });
+  if (!Object.keys(changes).length) return taskView_(task);
+
+  // Status, progress and who does it are news for the team; wording edits are not.
+  var news = {};
+  if ('status' in changes) news.status = { from: task.status, to: changes.status };
+  if ('percent' in changes) news.percent = { from: Number(task.percent) || 0, to: Number(changes.percent) };
+  if ('assigneeEmail' in changes) news.assigneeEmail = { from: task.assigneeEmail, to: changes.assigneeEmail };
+
+  changes.updatedAt = now;
+  saveRow_('tasks', task, changes);
+  if (Object.keys(news).length) {
+    postEvent_(ctx, project, task, {
+      type: 'taskUpdated', serial: task.serial, title: task.title,
+      assigneeEmail: news.assigneeEmail ? news.assigneeEmail.to : '', changes: news
+    });
+  }
+  return taskView_(task);
+}
+
+// ---------------------------------------------------------------------------
+// Daily updates — one per person per project per day; posting again replaces it
+// ---------------------------------------------------------------------------
+
+function actionPostUpdate_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  // The app sends the user's own calendar day; one day ahead of UTC is allowed for time zones.
+  var date = argDate_(body, 'date', true);
+  var tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  if (date > tomorrow) throw apiError_('BAD_REQUEST', 'An update cannot be for a future day.');
+  var done = argText_(body, 'done', MAX_TEXT, false);
+  var remaining = argText_(body, 'remaining', MAX_TEXT, false);
+  var blockers = argText_(body, 'blockers', MAX_TEXT, false);
+  if (!done && !remaining && !blockers) throw apiError_('BAD_REQUEST', 'Write what you did, what is left, or what is blocking you.');
+  var taskIds = argIdList_(body, 'taskIds', 'tasks', project, MAX_LIST);
+  var fileIds = argIdList_(body, 'fileIds', 'files', project, MAX_LIST);
+
+  var now = now_();
+  var fields = {
+    done: done, remaining: remaining, blockers: blockers,
+    taskIds: taskIds.join(','), fileIds: fileIds.join(','), updatedAt: now
+  };
+  var existing = projectRows_('updates', project.id).filter(function (u) {
+    return u.date === date && normEmail_(u.authorEmail) === ctx.email;
+  })[0];
+  var row;
+  if (existing) {
+    row = saveRow_('updates', existing, fields);
+  } else {
+    fields.id = Utilities.getUuid();
+    fields.projectId = project.id;
+    fields.authorEmail = ctx.email;
+    fields.date = date;
+    fields.createdAt = now;
+    row = insertRow_('updates', fields);
+  }
+  linkFiles_(fileIds, 'updateId', row.id);
+  return updateView_(row);
+}
+
+// ---------------------------------------------------------------------------
+// Files — saved in the project's Drive folder; the app then attaches the returned
+// id to a message or an update
+// ---------------------------------------------------------------------------
+
+var MIME_RE = /^[\w.+-]+\/[\w.+-]+$/;
+var BASE64_RE = /^[A-Za-z0-9+\/]+={0,2}$/;
+
+function actionUploadFile_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  var name = argText_(body, 'name', MAX_FILE_NAME, true).replace(/[\\\/]/g, '-');
+  var mimeType = body.mimeType === undefined || body.mimeType === '' ? 'application/octet-stream' : body.mimeType;
+  if (typeof mimeType !== 'string' || mimeType.length > 100 || !MIME_RE.test(mimeType)) throw apiError_('BAD_REQUEST', '"mimeType" is not valid.');
+
+  var data = body.data;
+  if (typeof data !== 'string' || !data) throw apiError_('BAD_REQUEST', 'The file is empty.');
+  if (data.length > MAX_UPLOAD_CHARS) throw apiError_('BAD_REQUEST', 'The file is too big (max about 15 MB).');
+  data = data.replace(/^data:[^,]*;base64,/, '').replace(/\s/g, '');
+  if (!BASE64_RE.test(data) || data.length % 4 !== 0) throw apiError_('BAD_REQUEST', 'The file was not sent correctly.');
+  var bytes = Utilities.base64Decode(data);
+  if (!bytes.length) throw apiError_('BAD_REQUEST', 'The file is empty.');
+
+  var file = DriveApp.getFolderById(project.folderId).createFile(Utilities.newBlob(bytes, mimeType, name));
+  try {
+    return withLock_(function () {
+      resetMemo_();
+      return fileView_(insertRow_('files', {
+        id: file.getId(), projectId: project.id, name: name, mimeType: mimeType, size: String(bytes.length),
+        uploaderEmail: ctx.email, messageId: '', updateId: '', createdAt: now_()
+      }));
+    });
+  } catch (err) {
+    // With no Sheet row nobody can find the file, so do not leave it behind in Drive.
+    try { file.setTrashed(true); } catch (e) { console.warn('Could not trash orphan upload ' + file.getId() + ': ' + e); }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reads — drive the unread counts in listProjects
+// ---------------------------------------------------------------------------
+
+function actionMarkRead_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  var now = now_();
+  var row = table_('reads').rows.filter(function (r) {
+    return r.projectId === project.id && normEmail_(r.email) === ctx.email;
+  })[0];
+  if (row) saveRow_('reads', row, { lastReadAt: now });
+  else insertRow_('reads', { email: ctx.email, projectId: project.id, lastReadAt: now });
+  return { projectId: project.id, lastReadAt: now };
 }

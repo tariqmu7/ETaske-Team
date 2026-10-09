@@ -65,12 +65,15 @@ formatted `@`) so Sheets never reformats them. Ids are `Utilities.getUuid()`.
 | `users` | email · name · photoUrl · role (`admin`/`member`) · status (`pending`/`approved`/`blocked`) · createdAt · approvedBy · lastSeenAt |
 | `projects` | id · name · description · folderId · createdBy · createdAt · archived (`TRUE`/blank) |
 | `members` | projectId · email · role (`lead`/`member`) · addedBy · addedAt |
-| `messages` | id · projectId · authorEmail · text · mentions (comma list of e-mails) · replyToId · fileIds (comma list) · taskId · createdAt · editedAt · deleted |
+| `messages` | id · projectId · authorEmail · text · mentions (comma list of e-mails) · replyToId · fileIds (comma list) · taskId · createdAt · editedAt · deleted · kind (blank = typed message, `event` = task line whose text is JSON) |
 | `tasks` | id · projectId · serial (`T-001` per project) · title · details · assigneeEmail · createdBy · status (`todo`/`doing`/`blocked`/`done`) · percent (0–100) · priority (`low`/`normal`/`high`) · dueDate (YYYY-MM-DD) · createdAt · updatedAt · doneAt |
-| `updates` | id · projectId · authorEmail · date (YYYY-MM-DD) · done · remaining · blockers · taskIds (comma list) · fileIds · createdAt |
+| `updates` | id · projectId · authorEmail · date (YYYY-MM-DD) · done · remaining · blockers · taskIds (comma list) · fileIds · createdAt · updatedAt — one row per person per project per day |
 | `files` | id (Drive file id) · projectId · name · mimeType · size · uploaderEmail · messageId · updateId · createdAt |
 | `reads` | email · projectId · lastReadAt — drives unread counts |
-| `meta` | key · value — per-project task serial counters, schema version |
+| `meta` | key · value — `taskSerial:<projectId>` counters, `schemaVersion` |
+
+Text that starts with `=`, `+` or `-` is stored behind an invisible zero-width space so it can
+never become a live formula in the Sheet; the script removes it again when reading.
 
 Enum **values** are English data; the app translates them only for display (same rule as
 ETaske). Rough capacity: a Sheet holds 10 M cells; at ~10 columns a message that is ~1 M
@@ -90,11 +93,12 @@ All writes run under `LockService.getScriptLock()` so two people saving at once 
 | `listProjects` | approved | projects I belong to (all for admin) + unread counts |
 | `createProject` · `updateProject` · `archiveProject` | admin | also creates/renames the Drive folder |
 | `listMembers` · `addMember` · `removeMember` | admin or project lead | also shares/unshares the Drive folder |
-| `sync` | member | everything in one project changed since `since` (messages, tasks, updates, files) + server time to use as the next `since` |
-| `postMessage` · `editMessage` · `deleteMessage` | member (edit/delete: author or admin) | mentions are parsed from `@name` by the app and sent as e-mails |
-| `createTask` · `updateTask` | member | assign, set status/percent/due; status/percent changes also post a short system line in chat |
-| `postUpdate` | member | the daily "what I did / what is left / blockers" |
-| `uploadFile` | member | base64 body, ≤ 20 MB after encoding; saved in the project folder; returns the `files` row |
+| `sync` | member | everything in one project changed since `since` (messages, tasks, updates, files) + `next` to send as the next `since`. First call (no `since`): all tasks and files, last 200 messages, last 30 days of updates. Answers overlap by 30 s, so the app **merges rows by id** |
+| `listMessages` | member | older messages for scrolling up: `before` (a createdAt) + `limit` ≤ 200 |
+| `postMessage` · `editMessage` · `deleteMessage` | member (edit/delete: author or admin) | the app sends `mentions` as e-mails; non-members are dropped. Delete hides the message in the app; the text stays in the Sheet. Task lines cannot be edited; only an admin deletes them |
+| `createTask` · `updateTask` | create: any member; change: assignee, creator, lead or admin | serial `T-001` per project. Creating, and changing status / percent / assignee, posts an `event` line in chat (JSON the app words in the reader's language; the assignee is mentioned). `fromMessageId` turns a message into a task (the line replies to it). `done` sets 100 % and `doneAt` |
+| `postUpdate` | member | the daily "what I did / what is left / blockers"; posting again for the same day replaces it; no future days |
+| `uploadFile` | member | base64 body, ≤ 20 MB after encoding (~15 MB file); saved in the project folder; returns the `files` row with `url` and `thumbnailUrl`. The app then passes the id in `fileIds` of a message or update. Drive work runs outside the lock; if the Sheet row fails the Drive file is trashed |
 | `markRead` | member | sets `reads.lastReadAt` |
 
 ## 5. Live feeling without Firebase
@@ -135,8 +139,8 @@ phone** in this version; unread badges in the app, and (optional, later) an e-ma
 ## 8. Build order (matches the memory TASK QUEUE)
 
 1. Repo skeleton + this design ✅
-2. Apps Script part 1: `setup`, token check, users/approval, projects, members, Drive folders
-3. Apps Script part 2: messages, tasks, updates, uploads, sync, reads
+2. Apps Script part 1: `setup`, token check, users/approval, projects, members, Drive folders ✅
+3. Apps Script part 2: messages, tasks, updates, uploads, sync, reads ✅
 4. Tariq: create the Sheet, paste the script, run `setup`, deploy the web app, set the two repo
    variables
 5. Screens: sign in, waiting, projects, admin approvals

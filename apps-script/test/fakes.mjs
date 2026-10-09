@@ -47,6 +47,8 @@ class FakeSheet {
             let v = values[r][c];
             // Mimic Sheets: without plain-text format, ISO dates and TRUE get converted.
             if (fmt !== '@' && typeof v === 'string' && (/^\d{4}-\d{2}-\d{2}T/.test(v) || v === 'TRUE')) v = { converted: v };
+            // Worst case: a leading "=" becomes a live formula even in a plain-text cell.
+            if (typeof v === 'string' && v.startsWith('=')) v = { formula: v };
             sheet.cells[row - 1 + r][col - 1 + c] = v;
           }
         }
@@ -79,10 +81,20 @@ class FakeFolder {
     this.viewers.push(e); return this;
   }
   removeViewer(e) { this.drive.shareCalls.push(['remove', this.id, e]); this.viewers = this.viewers.filter((v) => v !== e); return this; }
+  createFile(blob) {
+    const file = {
+      id: 'file_' + randomUUID().slice(0, 8), folder: this, name: blob.name, mimeType: blob.mime,
+      bytes: blob.bytes, trashed: false,
+      getId() { return this.id; },
+      setTrashed(t) { this.trashed = t; return this; }
+    };
+    this.drive.files.set(file.id, file);
+    return file;
+  }
 }
 
 export function makeEnv() {
-  const drive = { folders: new Map(), shareCalls: [] };
+  const drive = { folders: new Map(), files: new Map(), shareCalls: [] };
   const work = new FakeFolder(drive, 'Work', null);
   drive.folders.delete(work.id);
   work.id = WORK_ID;
@@ -106,11 +118,19 @@ export function makeEnv() {
   const tokens = new Map(); // id_token -> tokeninfo JSON (or a number = HTTP error code)
   const fetches = [];
   const logs = [];
+  const lock = { free: true }; // set free = false to make the script lock time out
+
+  // The script's clock; clock.advance(ms) moves time forward for Code.gs only.
+  const clock = { offset: 0, advance(ms) { this.offset += ms; } };
+  class ClockDate extends Date {
+    constructor(...a) { if (a.length) super(...a); else super(Date.now() + clock.offset); }
+    static now() { return Date.now() + clock.offset; }
+  }
 
   const context = {
     console: { log() {}, warn: (m) => logs.push(['warn', m]), error: (m) => logs.push(['error', m]) },
     Logger: { log: (m) => logs.push(['log', m]) },
-    JSON, Date, Math, Object, Array, String, Number, Error, RegExp,
+    JSON, Date: ClockDate, Math, Object, Array, String, Number, Error, RegExp,
     encodeURIComponent, decodeURIComponent,
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
     DriveApp: {
@@ -138,9 +158,11 @@ export function makeEnv() {
       DigestAlgorithm: { SHA_256: 'sha256' },
       Charset: { UTF_8: 'utf8' },
       computeDigest: (alg, s) => [...createHash(alg).update(s, 'utf8').digest()],
-      base64EncodeWebSafe: (bytes) => Buffer.from(bytes).toString('base64url')
+      base64EncodeWebSafe: (bytes) => Buffer.from(bytes).toString('base64url'),
+      base64Decode: (s) => [...Buffer.from(s, 'base64')].map((b) => (b > 127 ? b - 256 : b)),
+      newBlob: (bytes, mime, name) => ({ bytes, mime, name })
     },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+    LockService: { getScriptLock: () => ({ tryLock: () => lock.free, releaseLock() {} }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => OWNER }) },
     ContentService: {
       MimeType: { JSON: 'application/json' },
@@ -176,5 +198,5 @@ export function makeEnv() {
     return rest.map((r) => Object.fromEntries(head.map((h, i) => [h, r[i]])));
   }
 
-  return { context, ss, sheets, ssFile, drive, work, props, cache, tokens, fetches, logs, token, call, rows };
+  return { context, ss, sheets, ssFile, drive, work, props, cache, tokens, fetches, logs, lock, clock, token, call, rows };
 }
