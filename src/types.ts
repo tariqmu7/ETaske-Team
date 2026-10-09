@@ -67,6 +67,8 @@ export interface Task {
   doneAt: string;
   /** '' = no category. May name a removed category; the app then shows none. */
   categoryId: string;
+  /** '' = no milestone. May name a removed milestone; the app then shows none. */
+  milestoneId: string;
 }
 
 /** A project's own list of task categories; any member adds, lead/admin rename or remove. */
@@ -74,6 +76,19 @@ export interface Category {
   id: string;
   projectId: string;
   name: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  deleted: boolean;
+}
+
+/** A project checkpoint; the lead or an admin keeps the list, tasks link to it. */
+export interface Milestone {
+  id: string;
+  projectId: string;
+  name: string;
+  /** YYYY-MM-DD, or '' when there is no date. */
+  dueDate: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -153,4 +168,5 @@ export interface SyncResult {
   updates: DailyUpdate[];
   files: FileItem[];
   categories?: Category[];
+  milestones?: Milestone[];
 }

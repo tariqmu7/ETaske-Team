@@ -1,13 +1,15 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarClock, ChevronDown, ClipboardList, Plus, Tags } from 'lucide-react';
+import { CalendarClock, ChevronDown, ClipboardList, Flag, Plus, Tags } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
 import { CategoriesModal } from '../components/CategoriesModal';
+import { MilestoneMeter, MilestonesModal } from '../components/MilestonesModal';
 import { TaskModal } from '../components/TaskModal';
 import { useLanguage } from '../hooks/useLanguage';
 import type { Session } from '../hooks/useSession';
 import type { useProjectSync } from '../hooks/useProjectSync';
 import { categoryHue, categoryOf, liveCategories } from '../lib/categories';
+import { liveMilestones, milestoneOf, milestoneProgress } from '../lib/milestones';
 import { displayName, localDay, shortDate } from '../lib/format';
 import { canEditTask, compareTasks, isLate, taskPriorityLabel, taskStatusClass, taskStatusLabel } from '../lib/tasks';
 import type { Member, Task, User } from '../types';
@@ -26,19 +28,21 @@ interface Props {
 }
 
 interface Group {
-  /** Person: their e-mail ('' = nobody). Category: its id ('' = none). */
+  /** Person: their e-mail ('' = nobody). Category / milestone: its id ('' = none). */
   key: string;
   tasks: Task[];
   open: number;
   late: number;
 }
 
-/** Filter value: all categories ('' = tasks with none; anything else = one category id). */
+/** Filter value: all ('' = tasks with none; anything else = one category / milestone id). */
 const ALL = '*';
 
+type GroupBy = 'person' | 'category' | 'milestone';
+
 /**
- * The project's tasks grouped by person (or by category): late first, then blocked,
- * in progress, to do. Done ones fold away. A category filter narrows the list.
+ * The project's tasks grouped by person, category or milestone: late first, then blocked,
+ * in progress, to do. Done ones fold away. Category and milestone filters narrow the list.
  */
 export function ProjectTasks({ projectId, me, call, sync, members, people, isLead, archived }: Props) {
   const { t } = useTranslation();
@@ -48,14 +52,19 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
   const [showDone, setShowDone] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);   // '' = new task
   const [catFilter, setCatFilter] = useState(ALL);
-  const [byCategory, setByCategory] = useState(false);
+  const [msFilter, setMsFilter] = useState(ALL);
+  const [groupBy, setGroupBy] = useState<GroupBy>('person');
   const [managing, setManaging] = useState(false);
+  const [managingMs, setManagingMs] = useState(false);
   const today = localDay(Date.now());
   const canManage = isLead || me.role === 'admin';
   const cats = sync.categories;
   const live = useMemo(() => liveCategories(cats), [cats]);
   /** A task's category id, or '' when it has none (or names a removed one). */
   const catOf = (task: Task) => categoryOf(cats, task.categoryId)?.id ?? '';
+  const stones = sync.milestones;
+  const liveStones = useMemo(() => liveMilestones(stones), [stones]);
+  const msOf = (task: Task) => milestoneOf(stones, task.milestoneId)?.id ?? '';
 
   const assignable = useMemo(() => members.filter((m) => m.status !== 'blocked'), [members]);
 
@@ -63,8 +72,12 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
   const mine = onlyMine ? all.filter((x) => x.assigneeEmail.toLowerCase() === myEmail) : all;
   // A category removed meanwhile (by someone else) falls back to "all".
   const filter = catFilter === ALL || catFilter === '' || live.some((c) => c.id === catFilter) ? catFilter : ALL;
-  const shown = filter === ALL ? mine : mine.filter((x) => catOf(x) === filter);
+  const msFilt = msFilter === ALL || msFilter === '' || liveStones.some((m) => m.id === msFilter) ? msFilter : ALL;
+  const shown = mine.filter((x) => (filter === ALL || catOf(x) === filter) && (msFilt === ALL || msOf(x) === msFilt));
   const countIn = (id: string) => mine.filter((x) => x.status !== 'done' && catOf(x) === id).length;
+  const countInMs = (id: string) => mine.filter((x) => x.status !== 'done' && msOf(x) === id).length;
+  const byCategory = groupBy === 'category';
+  const byMilestone = groupBy === 'milestone';
   const doneCount = shown.filter((x) => x.status === 'done').length;
   const openCount = shown.length - doneCount;
   const lateCount = shown.filter((x) => isLate(x, today)).length;
@@ -73,7 +86,9 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
     const map = new Map<string, Group>();
     for (const task of shown) {
       if (task.status === 'done' && !showDone) continue;
-      const key = byCategory ? (categoryOf(cats, task.categoryId)?.id ?? '') : task.assigneeEmail.toLowerCase();
+      const key = byCategory ? (categoryOf(cats, task.categoryId)?.id ?? '')
+        : byMilestone ? (milestoneOf(stones, task.milestoneId)?.id ?? '')
+        : task.assigneeEmail.toLowerCase();
       const g = map.get(key) ?? { key, tasks: [], open: 0, late: 0 };
       g.tasks.push(task);
       if (task.status !== 'done') g.open++;
@@ -81,6 +96,12 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
       map.set(key, g);
     }
     for (const g of map.values()) g.tasks.sort((a, b) => compareTasks(a, b, today));
+    if (byMilestone) {
+      // Same order as the list: soonest due first; tasks with no milestone last.
+      const order = new Map(liveStones.map((m, i) => [m.id, i]));
+      const rank = (g: Group) => (g.key ? order.get(g.key) ?? 0 : liveStones.length);
+      return [...map.values()].sort((a, b) => rank(a) - rank(b));
+    }
     if (byCategory) {
       // A to Z by category name; tasks with no category last.
       const name = (g: Group) => categoryOf(cats, g.key)?.name ?? '';
@@ -89,7 +110,7 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
     // Me first, then by name; tasks nobody holds yet last.
     const rank = (g: Group) => (g.key === myEmail ? 0 : g.key ? 1 : 2);
     return [...map.values()].sort((a, b) => rank(a) - rank(b) || displayName(a.key, people).localeCompare(displayName(b.key, people)));
-  }, [shown, showDone, today, myEmail, people, byCategory, cats]);
+  }, [shown, showDone, today, myEmail, people, byCategory, byMilestone, cats, stones, liveStones]);
 
   const opened = openId ? all.find((x) => x.id === openId) ?? null : null;
 
@@ -127,15 +148,31 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
             <option value="">{t('No category')} ({countIn('')})</option>
           </select>
         </label>
+        {(liveStones.length > 0 || msFilt !== ALL) && (
+          <label className="cat-filter">
+            <Flag style={{ width: 15, height: 15 }} aria-hidden="true" />
+            <select className="input" value={msFilt} onChange={(e) => setMsFilter(e.target.value)} aria-label={t('Milestone')}>
+              <option value={ALL}>{t('All milestones')}</option>
+              {liveStones.map((m) => <option key={m.id} value={m.id}>{m.name} ({countInMs(m.id)})</option>)}
+              <option value="">{t('No milestone')} ({countInMs('')})</option>
+            </select>
+          </label>
+        )}
         <div className="seg" role="group" aria-label={t('Group by')}>
-          <button type="button" className={!byCategory ? 'active' : ''} aria-pressed={!byCategory} onClick={() => setByCategory(false)}>{t('By person')}</button>
-          <button type="button" className={byCategory ? 'active' : ''} aria-pressed={byCategory} onClick={() => setByCategory(true)}>{t('By category')}</button>
+          {(['person', 'category', 'milestone'] as const).map((g) => (
+            <button key={g} type="button" className={groupBy === g ? 'active' : ''} aria-pressed={groupBy === g} onClick={() => setGroupBy(g)}>
+              {g === 'person' ? t('By person') : g === 'category' ? t('By category') : t('By milestone')}
+            </button>
+          ))}
         </div>
         {!archived && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManaging(true)}>
             <Tags style={{ width: 15, height: 15 }} />{t('Categories')}
           </button>
         )}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManagingMs(true)}>
+          <Flag style={{ width: 15, height: 15 }} />{t('Milestones')}
+        </button>
       </div>
 
       {!sync.loaded && (
@@ -148,7 +185,7 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
         <div className="empty-state">
           <div className="empty-state-icon"><ClipboardList style={{ width: 28, height: 28 }} /></div>
           <div className="empty-state-title">
-            {openCount === 0 && doneCount > 0 ? t('All tasks are done') : filter !== ALL ? t('No tasks in this category') : onlyMine ? t('No tasks for you yet') : t('No tasks yet')}
+            {openCount === 0 && doneCount > 0 ? t('All tasks are done') : msFilt !== ALL ? t('No tasks in this milestone') : filter !== ALL ? t('No tasks in this category') : onlyMine ? t('No tasks for you yet') : t('No tasks yet')}
           </div>
           <div className="empty-state-sub">
             {archived ? t('This project is archived.') : t('Press New task, or open a chat message and choose Make it a task.')}
@@ -158,23 +195,29 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
 
       {groups.map((g) => {
         const cat = byCategory ? categoryOf(cats, g.key) : null;
-        const person = byCategory ? undefined : people.get(g.key);
-        const label = byCategory ? (cat?.name ?? t('No category')) : g.key ? displayName(g.key, people) : t('Not assigned');
+        const stone = byMilestone ? milestoneOf(stones, g.key) : null;
+        const person = groupBy === 'person' ? people.get(g.key) : undefined;
+        const label = byCategory ? (cat?.name ?? t('No category'))
+          : byMilestone ? (stone?.name ?? t('No milestone'))
+          : g.key ? displayName(g.key, people) : t('Not assigned');
         return (
           <section key={g.key || 'none'} className="task-group" aria-label={label}>
             <header className="task-group-head">
               {byCategory
                 ? <span className="task-group-cat" style={cat ? { background: `hsl(${categoryHue(cat.id)} 60% 45%)` } : undefined} aria-hidden="true"><Tags style={{ width: 15, height: 15 }} /></span>
+                : byMilestone
+                ? <span className={`task-group-cat task-group-ms${stone ? '' : ' none'}`} aria-hidden="true"><Flag style={{ width: 15, height: 15 }} /></span>
                 : g.key
                   ? <Avatar name={person?.name ?? ''} email={g.key} photoUrl={person?.photoUrl} size={28} />
                   : <span className="task-group-nobody" aria-hidden="true">?</span>}
               <bdi className="task-group-name">{label}</bdi>
-              {!byCategory && g.key === myEmail && <span className="tag">{t('You')}</span>}
+              {groupBy === 'person' && g.key === myEmail && <span className="tag">{t('You')}</span>}
               <span className="task-group-count">
                 {t('{{count}} open', { count: g.open })}
                 {g.late > 0 && <span className="pane-stat-late"> · {t('{{count}} late', { count: g.late })}</span>}
               </span>
             </header>
+            {stone && <div className="task-group-meter"><MilestoneMeter m={stone} p={milestoneProgress(stone, all, today)} /></div>}
             <ul className="task-list">
               {g.tasks.map((task) => {
                 const late = isLate(task, today);
@@ -190,7 +233,7 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
                         <span className={`badge ${taskStatusClass(task.status)}`}>{taskStatusLabel(t, task.status)}</span>
                         {task.priority === 'high' && <span className="badge badge-high">{taskPriorityLabel(t, 'high')}</span>}
                         {cat && <bdi className="cat-chip" style={{ '--cat-h': categoryHue(cat.id) } as CSSProperties}>{cat.name}</bdi>}
-                        {byCategory && task.assigneeEmail && <bdi className="task-who">{displayName(task.assigneeEmail, people)}</bdi>}
+                        {groupBy !== 'person' && task.assigneeEmail && <bdi className="task-who">{displayName(task.assigneeEmail, people)}</bdi>}
                         {task.dueDate && (
                           <span className={`task-due${late ? ' late' : ''}`}>
                             <CalendarClock style={{ width: 13, height: 13 }} />
@@ -225,12 +268,23 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
           members={assignable}
           people={people}
           task={opened}
-          seed={!opened && filter !== ALL && filter ? { categoryId: filter } : undefined}
+          seed={opened ? undefined : {
+            categoryId: filter !== ALL ? filter : undefined,
+            milestoneId: msFilt !== ALL ? msFilt : undefined,
+          }}
           categories={cats}
           onCategoryAdded={sync.putCategory}
+          milestones={stones}
           canEdit={!archived && (!opened || canEditTask(opened, me, isLead))}
           onSaved={onSaved}
           onClose={() => setOpenId(null)}
+        />
+      )}
+
+      {managingMs && (
+        <MilestonesModal
+          projectId={projectId} call={call} milestones={stones} tasks={all} canManage={canManage && !archived}
+          onChanged={sync.putMilestone} onClose={() => setManagingMs(false)}
         />
       )}
 

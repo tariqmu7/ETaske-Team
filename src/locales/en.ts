@@ -304,6 +304,25 @@ const en = {
   "Only the project lead or an admin can rename or remove a category.": "Only the project lead or an admin can rename or remove a category.",
   "The list everyone in this project picks from. Add what is missing, fix a name, or remove one nobody needs.": "The list everyone in this project picks from. Add what is missing, fix a name, or remove one nobody needs.",
   "The list everyone in this project picks from. Add what is missing; the project lead can rename or remove.": "The list everyone in this project picks from. Add what is missing; the project lead can rename or remove.",
+  // Milestones
+  "Milestone": "Milestone",
+  "Milestones": "Milestones",
+  "All milestones": "All milestones",
+  "No milestone": "No milestone",
+  "No milestones yet.": "No milestones yet.",
+  "No tasks in this milestone": "No tasks in this milestone",
+  "By milestone": "By milestone",
+  "New milestone name": "New milestone name",
+  "Milestone name": "Milestone name",
+  "Change {{name}}": "Change {{name}}",
+  "{{done}} of {{total}} tasks done": "{{done}} of {{total}} tasks done",
+  "No tasks linked yet": "No tasks linked yet",
+  "Remove milestone \"{{name}}\"?": "Remove milestone \"{{name}}\"?",
+  "Remove milestone \"{{name}}\"? {{count}} tasks are linked to it; they will show no milestone.": "Remove milestone \"{{name}}\"? {{count}} tasks are linked to it; they will show no milestone.",
+  "There is already a milestone with that name.": "There is already a milestone with that name.",
+  "Only the project lead or an admin can add, change or remove a milestone.": "Only the project lead or an admin can add, change or remove a milestone.",
+  "The checkpoints of this project. Link tasks to a milestone; its progress is the average of those tasks.": "The checkpoints of this project. Link tasks to a milestone; its progress is the average of those tasks.",
+  "The checkpoints of this project. Its progress is the average of the tasks linked to it; the project lead keeps this list.": "The checkpoints of this project. Its progress is the average of the tasks linked to it; the project lead keeps this list.",
 };
 
 export default en;

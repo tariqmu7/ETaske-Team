@@ -305,6 +305,25 @@ const ar: Record<keyof typeof en, string> = {
   "Only the project lead or an admin can rename or remove a category.": "لا يعدّل اسم التصنيف أو يحذفه إلا قائد المشروع أو مدير النظام.",
   "The list everyone in this project picks from. Add what is missing, fix a name, or remove one nobody needs.": "القائمة التي يختار منها كل أعضاء المشروع: أضف ما ينقصها، أو صحّح اسمًا، أو احذف ما لم يعد يلزم.",
   "The list everyone in this project picks from. Add what is missing; the project lead can rename or remove.": "القائمة التي يختار منها كل أعضاء المشروع: أضف ما ينقصها، ويتولى قائد المشروع إعادة التسمية والحذف.",
+  // Milestones
+  "Milestone": "المرحلة",
+  "Milestones": "المراحل",
+  "All milestones": "كل المراحل",
+  "No milestone": "بلا مرحلة",
+  "No milestones yet.": "لا توجد مراحل بعد.",
+  "No tasks in this milestone": "لا مهام في هذه المرحلة",
+  "By milestone": "حسب المرحلة",
+  "New milestone name": "اسم المرحلة الجديدة",
+  "Milestone name": "اسم المرحلة",
+  "Change {{name}}": "عدّل {{name}}",
+  "{{done}} of {{total}} tasks done": "أُنجز {{done}} من أصل {{total}}",
+  "No tasks linked yet": "لم تُربط بها مهام بعد",
+  "Remove milestone \"{{name}}\"?": "أتحذف مرحلة «{{name}}»؟",
+  "Remove milestone \"{{name}}\"? {{count}} tasks are linked to it; they will show no milestone.": "أتحذف مرحلة «{{name}}»؟ ترتبط بها {{count}} من المهام، وستظهر بعده بلا مرحلة.",
+  "There is already a milestone with that name.": "توجد مرحلة بهذا الاسم بالفعل.",
+  "Only the project lead or an admin can add, change or remove a milestone.": "لا يضيف المرحلة أو يعدّلها أو يحذفها إلا قائد المشروع أو مدير النظام.",
+  "The checkpoints of this project. Link tasks to a milestone; its progress is the average of those tasks.": "المحطات الرئيسية لهذا المشروع: اربط كل مهمة بمرحلتها، وتُحسب نسبة إنجاز المرحلة من متوسط إنجاز مهامها.",
+  "The checkpoints of this project. Its progress is the average of the tasks linked to it; the project lead keeps this list.": "المحطات الرئيسية لهذا المشروع: تُحسب نسبة إنجاز كل مرحلة من متوسط إنجاز المهام المرتبطة بها، ويتولى قائد المشروع إدارة القائمة.",
 };
 
 export default ar;

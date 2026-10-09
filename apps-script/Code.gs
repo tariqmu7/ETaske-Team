@@ -31,8 +31,9 @@ var TABLES = {
   projects: ['id', 'name', 'description', 'folderId', 'createdBy', 'createdAt', 'archived'],
   members: ['projectId', 'email', 'role', 'addedBy', 'addedAt'],
   messages: ['id', 'projectId', 'authorEmail', 'text', 'mentions', 'replyToId', 'fileIds', 'taskId', 'createdAt', 'editedAt', 'deleted', 'kind'],
-  tasks: ['id', 'projectId', 'serial', 'title', 'details', 'assigneeEmail', 'createdBy', 'status', 'percent', 'priority', 'dueDate', 'createdAt', 'updatedAt', 'doneAt', 'categoryId'],
+  tasks: ['id', 'projectId', 'serial', 'title', 'details', 'assigneeEmail', 'createdBy', 'status', 'percent', 'priority', 'dueDate', 'createdAt', 'updatedAt', 'doneAt', 'categoryId', 'milestoneId'],
   categories: ['id', 'projectId', 'name', 'createdBy', 'createdAt', 'updatedAt', 'deleted'],
+  milestones: ['id', 'projectId', 'name', 'dueDate', 'createdBy', 'createdAt', 'updatedAt', 'deleted'],
   updates: ['id', 'projectId', 'authorEmail', 'date', 'done', 'remaining', 'blockers', 'taskIds', 'fileIds', 'createdAt', 'updatedAt'],
   files: ['id', 'projectId', 'name', 'mimeType', 'size', 'uploaderEmail', 'messageId', 'updateId', 'createdAt'],
   reads: ['email', 'projectId', 'lastReadAt'],
@@ -49,6 +50,8 @@ var TASK_PRIORITIES = ['low', 'normal', 'high'];
 var MAX_NAME = 100;
 var MAX_CATEGORY = 60;
 var MAX_CATEGORIES = 100;    // per project
+var MAX_MILESTONE = 100;
+var MAX_MILESTONES = 100;    // per project
 var MAX_DESCRIPTION = 2000;
 var MAX_TEXT = 4000;
 var MAX_TITLE = 200;
@@ -190,6 +193,8 @@ var ACTIONS = {
   updateTask: { who: 'approved', write: true, fn: actionUpdateTask_ },
   addCategory: { who: 'approved', write: true, fn: actionAddCategory_ },
   editCategory: { who: 'approved', write: true, fn: actionEditCategory_ },
+  addMilestone: { who: 'approved', write: true, fn: actionAddMilestone_ },
+  editMilestone: { who: 'approved', write: true, fn: actionEditMilestone_ },
   postUpdate: { who: 'approved', write: true, fn: actionPostUpdate_ },
   // Not `write`: the Drive upload runs outside the lock; only the Sheet row is written under it.
   uploadFile: { who: 'approved', fn: actionUploadFile_ },
@@ -827,6 +832,15 @@ function argCategory_(body, project) {
   return c.id;
 }
 
+/** '' (none) or the id of a milestone of this project that is still in use. */
+function argMilestone_(body, project) {
+  var v = body.milestoneId;
+  if (v === undefined || v === null || v === '') return '';
+  var m = findInProject_('milestones', project.id, v);
+  if (!m || m.deleted === 'TRUE') throw apiError_('BAD_REQUEST', 'That milestone is not in this project any more.');
+  return m.id;
+}
+
 /** Sets messageId / updateId on files that are not linked to anything yet. */
 function linkFiles_(fileIds, field, value) {
   fileIds.forEach(function (id) {
@@ -867,6 +881,10 @@ function taskView_(t) {
 
 function categoryView_(c) {
   return { id: c.id, projectId: c.projectId, name: c.name, createdBy: c.createdBy, createdAt: c.createdAt, updatedAt: c.updatedAt, deleted: c.deleted === 'TRUE' };
+}
+
+function milestoneView_(m) {
+  return { id: m.id, projectId: m.projectId, name: m.name, dueDate: m.dueDate, createdBy: m.createdBy, createdAt: m.createdAt, updatedAt: m.updatedAt, deleted: m.deleted === 'TRUE' };
 }
 
 function updateView_(u) {
@@ -924,8 +942,10 @@ function actionSync_(ctx, body) {
   var updates = projectRows_('updates', project.id);
   var files = projectRows_('files', project.id);
   var categories = projectRows_('categories', project.id);
+  var milestones = projectRows_('milestones', project.id);
   if (since) {
     categories = categories.filter(function (c) { return c.updatedAt > since; });
+    milestones = milestones.filter(function (m) { return m.updatedAt > since; });
     tasks = tasks.filter(function (x) { return x.updatedAt > since; });
     updates = updates.filter(function (u) { return updateStamp_(u) > since; });
     files = files.filter(function (f) { return f.createdAt > since; });
@@ -948,7 +968,8 @@ function actionSync_(ctx, body) {
     tasks: tasks.sort(byCreated_).map(taskView_),
     updates: updates.sort(byCreated_).map(updateView_),
     files: files.sort(byCreated_).map(fileView_),
-    categories: categories.sort(byCreated_).map(categoryView_)
+    categories: categories.sort(byCreated_).map(categoryView_),
+    milestones: milestones.sort(byCreated_).map(milestoneView_)
   };
 }
 
@@ -1069,6 +1090,7 @@ function actionCreateTask_(ctx, body) {
   var percent = body.percent === undefined ? 0 : argPercent_(body);
   var dueDate = argDate_(body, 'dueDate', false);
   var categoryId = argCategory_(body, project);
+  var milestoneId = argMilestone_(body, project);
   var from = argRef_(body, 'fromMessageId', 'messages', project, 'The message');
   if (from && from.deleted === 'TRUE') throw apiError_('NOT_FOUND', 'The message was not found.');
   if (status === 'done') percent = 100;
@@ -1078,7 +1100,8 @@ function actionCreateTask_(ctx, body) {
     id: Utilities.getUuid(), projectId: project.id, serial: nextSerial_(project.id),
     title: title, details: details, assigneeEmail: assignee, createdBy: ctx.email,
     status: status, percent: String(percent), priority: priority, dueDate: dueDate,
-    createdAt: now, updatedAt: now, doneAt: status === 'done' ? now : '', categoryId: categoryId
+    createdAt: now, updatedAt: now, doneAt: status === 'done' ? now : '', categoryId: categoryId,
+    milestoneId: milestoneId
   });
   postEvent_(ctx, project, task, {
     type: 'taskCreated', serial: task.serial, title: title, assigneeEmail: assignee, status: status, dueDate: dueDate
@@ -1105,6 +1128,7 @@ function actionUpdateTask_(ctx, body) {
   if (body.priority !== undefined) next.priority = argEnum_(body, 'priority', TASK_PRIORITIES);
   if (body.dueDate !== undefined) next.dueDate = argDate_(body, 'dueDate', false);
   if (body.categoryId !== undefined) next.categoryId = argCategory_(body, project);
+  if (body.milestoneId !== undefined) next.milestoneId = argMilestone_(body, project);
 
   var now = now_();
   if (next.status === 'done' && task.status !== 'done') { next.doneAt = now; next.percent = '100'; }
@@ -1186,6 +1210,69 @@ function actionEditCategory_(ctx, body) {
   changes.updatedAt = now_();
   saveRow_('categories', cat, changes);
   return categoryView_(cat);
+}
+
+// ---------------------------------------------------------------------------
+// Milestones — the project's checkpoints (name + optional due date). The project lead or an
+// admin keeps the list; anyone who may edit a task links it to one. Progress is not stored:
+// the app works it out from the linked tasks.
+// ---------------------------------------------------------------------------
+
+function requireMilestoneManager_(ctx, project) {
+  if (!canManageProject_(ctx, project)) throw apiError_('FORBIDDEN', 'Only the project lead or an admin can add, change or remove a milestone.');
+}
+
+/** A live milestone with the same name (any case) is a CONFLICT; a removed one is brought back. */
+function actionAddMilestone_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  requireMilestoneManager_(ctx, project);
+  var name = argText_(body, 'name', MAX_MILESTONE, true);
+  var dueDate = argDate_(body, 'dueDate', false);
+  var rows = projectRows_('milestones', project.id);
+  var same = rows.filter(function (m) { return sameName_(m.name, name); })[0];
+  if (same && same.deleted !== 'TRUE') throw apiError_('CONFLICT', 'There is already a milestone with that name.');
+  if (same) {
+    saveRow_('milestones', same, { name: name, dueDate: dueDate, deleted: '', updatedAt: now_() });
+    return milestoneView_(same);
+  }
+  var live = rows.filter(function (m) { return m.deleted !== 'TRUE'; }).length;
+  if (live >= MAX_MILESTONES) throw apiError_('BAD_REQUEST', 'This project already has ' + MAX_MILESTONES + ' milestones.');
+  var now = now_();
+  return milestoneView_(insertRow_('milestones', {
+    id: Utilities.getUuid(), projectId: project.id, name: name, dueDate: dueDate, createdBy: ctx.email,
+    createdAt: now, updatedAt: now, deleted: ''
+  }));
+}
+
+/** Change `name` / `dueDate`, or remove (`deleted: true`); tasks that had it then show none. */
+function actionEditMilestone_(ctx, body) {
+  var project = argProject_(body);
+  requireProjectAccess_(ctx, project);
+  requireOpenProject_(project);
+  requireMilestoneManager_(ctx, project);
+  var ms = findInProject_('milestones', project.id, body.milestoneId);
+  if (!ms) throw apiError_('NOT_FOUND', 'Milestone not found.');
+  var changes = {};
+  if (body.name !== undefined) {
+    var name = argText_(body, 'name', MAX_MILESTONE, true);
+    var clash = projectRows_('milestones', project.id).filter(function (m) {
+      return m.id !== ms.id && m.deleted !== 'TRUE' && sameName_(m.name, name);
+    })[0];
+    if (clash) throw apiError_('CONFLICT', 'There is already a milestone with that name.');
+    changes.name = name;
+  }
+  if (body.dueDate !== undefined) changes.dueDate = argDate_(body, 'dueDate', false);
+  if (body.deleted !== undefined) {
+    if (typeof body.deleted !== 'boolean') throw apiError_('BAD_REQUEST', '"deleted" must be true or false.');
+    changes.deleted = body.deleted ? 'TRUE' : '';
+  }
+  Object.keys(changes).forEach(function (k) { if (changes[k] === ms[k]) delete changes[k]; });
+  if (!Object.keys(changes).length) return milestoneView_(ms);
+  changes.updatedAt = now_();
+  saveRow_('milestones', ms, changes);
+  return milestoneView_(ms);
 }
 
 // ---------------------------------------------------------------------------

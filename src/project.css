@@ -263,3 +263,25 @@
 .cat-empty { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 20px; margin-top: 12px; color: var(--text-muted); border: 1px dashed var(--border-md); font-size: 13px; }
 .task-modal-wide { grid-column: 1 / -1; }
 .pane-toolbar-sub .btn-sm { min-height: 34px; padding-block: 0; }
+
+/* ─── Milestones ─── */
+.task-group-ms { background: var(--accent); }
+.task-group-ms.none { background: var(--surface-3); color: var(--text-muted); }
+.task-group-meter { padding: 0 2px 8px; }
+.ms-meter { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.ms-meter .progress-bar { flex: 1 1 120px; max-width: 260px; height: 8px; }
+.ms-percent { font-weight: 800; font-size: 13px; min-width: 38px; }
+.ms-sub { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; color: var(--text-muted); }
+.ms-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ms-add .input:first-child { flex: 1 1 180px; min-width: 0; }
+.ms-add input[type="date"] { flex: 0 1 150px; min-width: 0; }
+.ms-item { padding: 8px 8px 10px 12px; }
+.ms-item + .ms-item { border-top: 1px solid var(--border); }
+.ms-head { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.ms-head .ms-flag { color: var(--accent); flex-shrink: 0; }
+.ms-head .ms-flag.complete { color: var(--success); }
+.ms-item .ms-meter { margin-top: 4px; padding-inline-start: 23px; }
+.ms-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ms-edit .input { padding-block: 6px; }
+.ms-edit .input:first-child { flex: 1 1 160px; min-width: 0; }
+.ms-edit input[type="date"] { flex: 0 1 150px; min-width: 0; }

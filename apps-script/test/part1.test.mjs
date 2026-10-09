@@ -31,7 +31,7 @@ test('setup builds the folders, tabs and settings, and is safe to run twice', ()
   assert.equal(env.ssFile.parents[0], root, 'the Sheet is moved into ETaske Team/');
   assert.equal(env.ss.getName(), 'ETaske Team — data');
   assert.deepEqual(env.sheets.map((s) => s.name).sort(),
-    ['categories', 'files', 'members', 'messages', 'meta', 'projects', 'reads', 'tasks', 'updates', 'users']);
+    ['categories', 'files', 'members', 'messages', 'meta', 'milestones', 'projects', 'reads', 'tasks', 'updates', 'users']);
   assert.equal(env.props.get('GOOGLE_CLIENT_ID'), CLIENT_ID);
   assert.equal(env.props.get('ADMIN_EMAILS'), OWNER);
   assert.deepEqual(env.rows('meta'), [{ key: 'schemaVersion', value: '1' }]);
@@ -41,7 +41,7 @@ test('setup builds the folders, tabs and settings, and is safe to run twice', ()
   assert.equal(second.rootFolderId, first.rootFolderId);
   assert.equal(second.projectsFolderId, first.projectsFolderId);
   assert.equal(env.drive.folders.size, 3, 'no duplicate folders');
-  assert.equal(env.sheets.length, 10);
+  assert.equal(env.sheets.length, 11);
   assert.equal(env.ss.getSheetByName('users').cells.length, 1, 'header only, not doubled');
   assert.equal(env.props.get('ADMIN_EMAILS'), `${OWNER},other@x.com`, 'existing settings are kept');
   assert.equal(env.rows('meta').length, 1);

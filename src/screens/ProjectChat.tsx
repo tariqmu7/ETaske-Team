@@ -537,6 +537,7 @@ export function ProjectChat({ projectId, me, call, sync, members, archived }: Pr
           seed={taskSeed}
           categories={sync.categories}
           onCategoryAdded={sync.putCategory}
+          milestones={sync.milestones}
           canEdit
           onSaved={onTaskCreated}
           onClose={() => setTaskSeed(null)}
