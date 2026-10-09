@@ -147,7 +147,7 @@ const en = {
   "Remove {{name}}": "Remove {{name}}",
   "Attach photos or files": "Attach photos or files",
   "Mention someone": "Mention someone",
-  "Write a message… type @ to mention someone": "Write a message… type @ to mention someone",
+  "Write a message (@ to mention)": "Write a message (@ to mention)",
   "Message": "Message",
   "Save": "Save",
   "Send": "Send",

@@ -254,7 +254,7 @@ export function Composer({ people, disabledReason, replyTo, onCancelReply, editi
             onClick={(e) => readPicker(text, e.currentTarget.selectionStart ?? text.length)}
             onBlur={() => setPicker(null)}
             onPaste={(e) => { if (!editing && e.clipboardData.files.length) { e.preventDefault(); addFiles(e.clipboardData.files); } }}
-            placeholder={t('Write a message… type @ to mention someone')}
+            placeholder={t('Write a message (@ to mention)')}
             aria-label={t('Message')}
             maxLength={MAX_TEXT}
             rows={1}

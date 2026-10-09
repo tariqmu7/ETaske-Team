@@ -66,7 +66,7 @@
   padding: 6px 10px 4px;
   min-width: 64px;
   max-width: 100%;
-  box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.06);
 }
 .chat-msg.mine .chat-bubble { background: var(--blue-100); border-color: var(--blue-200); }
 .chat-bubble.mentions-me { border-inline-start: 3px solid var(--warning); }
@@ -136,14 +136,16 @@ a.chat-file-chip:hover { border-color: var(--accent); }
 .chat-actions svg { width: 14px; height: 14px; }
 .chat-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; color: var(--danger); justify-content: flex-end; }
 
+/* Task lines: quiet system notes, so people's messages stay the main thing. */
 .chat-event {
   align-self: center; display: flex; gap: 8px; align-items: flex-start;
-  margin: 10px 0 4px; padding: 8px 12px; max-width: min(92%, 560px);
-  background: var(--blue-50); border: 1px solid var(--blue-200);
-  font-size: 13px; color: var(--text-primary); text-align: start;
+  margin: 10px 0 4px; padding: 6px 12px; max-width: min(92%, 520px);
+  background: var(--surface); border: 1px dashed var(--border-md); border-inline-start: 3px solid var(--accent);
+  font-size: 12.5px; color: var(--text-secondary); text-align: start;
 }
-.chat-event-task { margin-top: 2px; }
-.chat-event-line { font-size: 12px; color: var(--text-secondary); }
+.chat-event bdi:first-child { color: var(--text-primary); }
+.chat-event-task { margin-top: 1px; font-size: 13px; color: var(--text-primary); }
+.chat-event-line { font-size: 12px; color: var(--text-muted); }
 
 .chat-new-below {
   position: absolute; bottom: 84px; inset-inline-end: 16px; z-index: 5;
@@ -162,7 +164,7 @@ a.chat-file-chip:hover { border-color: var(--accent); }
 }
 .chat-composer-off { font-size: 13px; color: var(--text-muted); text-align: center; padding: 14px 12px calc(14px + var(--safe-area-bottom)); }
 .chat-composer-row { display: flex; align-items: flex-end; gap: 6px; }
-.chat-input { resize: none; min-height: 40px; max-height: 160px; line-height: 1.45; padding-block: 9px; overflow-y: auto; }
+.chat-input { resize: none; min-height: 40px; max-height: 160px; line-height: 1.4; padding-block: 8px; overflow-y: auto; }
 .chat-send { flex-shrink: 0; width: 40px; height: 40px; }
 .chat-composer-context {
   display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-bottom: 6px;

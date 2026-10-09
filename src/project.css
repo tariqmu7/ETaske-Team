@@ -343,3 +343,35 @@
 .fu-del:hover:not(:disabled) { color: var(--danger); }
 .fu-note { margin-top: 2px; font-size: 13.5px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
 @media (max-width: 520px) { .fu-add textarea { min-height: 84px; } }
+
+/* ─── C5 polish ─── */
+/* Tasks: filters + group-by + manage buttons in one tidy row (two on a phone). */
+.pane-toolbar-sub { gap: 8px; }
+.group-filter { flex: 0 1 190px; }
+.pane-manage { display: inline-flex; gap: 6px; margin-inline-start: auto; }
+.task-group-head { border-bottom: 1px solid var(--border); margin-bottom: 6px; padding-bottom: 8px; }
+.tk-row { transition: border-color 0.12s, background 0.12s; }
+@media (max-width: 640px) {
+  .pane-toolbar-sub { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pane-toolbar-sub .cat-filter { max-width: none; }
+  .pane-manage { margin-inline-start: 0; }
+  .pane-manage .btn-sm { flex: 1; justify-content: center; padding-inline: 6px; }
+  .pane-toolbar:first-child { gap: 8px; }
+}
+
+/* Updates: two text boxes side by side on wide screens; who has posted as a bar. */
+.uf-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.uf-field { display: flex; flex-direction: column; min-width: 0; }
+.uf-field-wide { grid-column: 1 / -1; }
+@media (max-width: 640px) { .uf-fields { grid-template-columns: minmax(0, 1fr); } }
+.update-missing-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.update-missing-bar { flex: 0 1 160px; height: 6px; }
+.update-missing-label { font-size: 11.5px; color: var(--text-muted); margin: 8px 0 6px; }
+.update-card-head { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.update-tasks { gap: 6px; padding-top: 8px; border-top: 1px dashed var(--border-md); }
+.update-task { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.update-task-title { font-weight: 600; color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; }
+.update-task .badge { font-size: 10.5px; }
+.update-task-pct { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.update-task-note { margin-top: 3px; }
+.update-task-state { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }

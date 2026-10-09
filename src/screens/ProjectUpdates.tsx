@@ -10,7 +10,7 @@ import { errorText } from '../lib/errors';
 import { MAX_FILE_BYTES, formatSize, shrinkImage, toBase64 } from '../lib/files';
 import { MAX_FOLLOWUP, nextFollowUps } from '../lib/followups';
 import { clockTime, dayLabel, displayName, localDay, shortDate } from '../lib/format';
-import { MAX_TASK_TEXT, TASK_STATUSES, canEditTask, compareTasks, taskStatusLabel } from '../lib/tasks';
+import { MAX_TASK_TEXT, TASK_STATUSES, canEditTask, compareTasks, taskStatusClass, taskStatusLabel } from '../lib/tasks';
 import type { DailyUpdate, FileItem, FollowUp, Member, Task, TaskStatus, User } from '../types';
 
 type Sync = ReturnType<typeof useProjectSync>;
@@ -99,9 +99,14 @@ export function ProjectUpdates({ projectId, me, call, sync, members, people, isL
       {sync.loaded && team.length > 0 && (
         <div className="update-missing">
           <div className="update-missing-head">
-            {t('Posted today: {{done}} of {{total}}', { done: team.length - missing.length, total: team.length })}
+            <span>{t('Posted today: {{done}} of {{total}}', { done: team.length - missing.length, total: team.length })}</span>
+            <span className="progress-bar update-missing-bar" aria-hidden="true">
+              <span className="progress-fill" style={{ display: 'block', width: `${Math.round(((team.length - missing.length) / team.length) * 100)}%` }} />
+            </span>
           </div>
           {missing.length > 0 ? (
+            <>
+            <div className="update-missing-label">{t('Not posted yet today')}</div>
             <ul className="update-missing-list" aria-label={t('Not posted yet today')}>
               {missing.map((m) => (
                 <li key={m.email}>
@@ -110,6 +115,7 @@ export function ProjectUpdates({ projectId, me, call, sync, members, people, isL
                 </li>
               ))}
             </ul>
+            </>
           ) : (
             <div className="text-muted" style={{ fontSize: 13 }}>{t('Everyone has posted today.')}</div>
           )}
@@ -157,9 +163,13 @@ export function ProjectUpdates({ projectId, me, call, sync, members, people, isL
                   <ul className="update-tasks">
                     {tasks.map((x) => (
                       <li key={x.id}>
-                        <div>
-                          <span className="ltr-data" style={{ fontWeight: 700 }}>{x.serial}</span> · <bdi>{x.title}</bdi>
-                          <span className="text-muted"> · {taskStatusLabel(t, x.status)} <span className="ltr-data">{x.percent}%</span></span>
+                        <div className="update-task">
+                          <span className="task-serial ltr-data">{x.serial}</span>
+                          <bdi className="update-task-title">{x.title}</bdi>
+                          <span className="update-task-state">
+                            <span className={`badge ${taskStatusClass(x.status)}`}>{taskStatusLabel(t, x.status)}</span>
+                            <span className="update-task-pct ltr-data">{x.percent}%</span>
+                          </span>
                         </div>
                         {(notesByDay.get(`${x.id}|${author}|${u.date}`) ?? []).map((f) => (
                           <div key={f.id} className="update-task-note">
@@ -353,14 +363,20 @@ function UpdateForm({ projectId, call, sync, me, isLead, today, existing, fileBy
     <form className="update-form" onSubmit={submit} noValidate>
       <h2 className="update-form-title">{existing ? t('Edit your update for today') : t('Your update for today')}</h2>
 
-      <label className="input-label" htmlFor="uf-done">{t('What I did')}</label>
-      <textarea id="uf-done" className="input" dir="auto" rows={3} maxLength={MAX_TASK_TEXT} value={done} onChange={(e) => setDone(e.target.value)} />
-
-      <label className="input-label" htmlFor="uf-left" style={{ marginTop: 10 }}>{t('What is left')}</label>
-      <textarea id="uf-left" className="input" dir="auto" rows={2} maxLength={MAX_TASK_TEXT} value={remaining} onChange={(e) => setRemaining(e.target.value)} />
-
-      <label className="input-label" htmlFor="uf-block" style={{ marginTop: 10 }}>{t('Anything blocking you? (optional)')}</label>
-      <textarea id="uf-block" className="input" dir="auto" rows={2} maxLength={MAX_TASK_TEXT} value={blockers} onChange={(e) => setBlockers(e.target.value)} />
+      <div className="uf-fields">
+        <div className="uf-field">
+          <label className="input-label" htmlFor="uf-done">{t('What I did')}</label>
+          <textarea id="uf-done" className="input" dir="auto" rows={3} maxLength={MAX_TASK_TEXT} value={done} onChange={(e) => setDone(e.target.value)} />
+        </div>
+        <div className="uf-field">
+          <label className="input-label" htmlFor="uf-left">{t('What is left')}</label>
+          <textarea id="uf-left" className="input" dir="auto" rows={3} maxLength={MAX_TASK_TEXT} value={remaining} onChange={(e) => setRemaining(e.target.value)} />
+        </div>
+        <div className="uf-field uf-field-wide">
+          <label className="input-label" htmlFor="uf-block">{t('Anything blocking you? (optional)')}</label>
+          <textarea id="uf-block" className="input" dir="auto" rows={2} maxLength={MAX_TASK_TEXT} value={blockers} onChange={(e) => setBlockers(e.target.value)} />
+        </div>
+      </div>
 
       {myTasks.length > 0 && (
         <fieldset className="update-form-tasks">

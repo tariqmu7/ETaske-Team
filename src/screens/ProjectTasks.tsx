@@ -1,6 +1,6 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BellRing, CalendarClock, ChevronDown, ClipboardList, Flag, Plus, Tags } from 'lucide-react';
+import { BellRing, CalendarClock, ChevronDown, ClipboardList, Flag, Plus, Rows3, Tags } from 'lucide-react';
 import { Avatar } from '../components/Avatar';
 import { CategoriesModal } from '../components/CategoriesModal';
 import { MilestoneMeter, MilestonesModal } from '../components/MilestonesModal';
@@ -176,21 +176,24 @@ export function ProjectTasks({ projectId, me, call, sync, members, people, isLea
             </select>
           </label>
         )}
-        <div className="seg" role="group" aria-label={t('Group by')}>
-          {(['person', 'category', 'milestone'] as const).map((g) => (
-            <button key={g} type="button" className={groupBy === g ? 'active' : ''} aria-pressed={groupBy === g} onClick={() => setGroupBy(g)}>
-              {g === 'person' ? t('By person') : g === 'category' ? t('By category') : t('By milestone')}
+        <label className="cat-filter group-filter">
+          <Rows3 style={{ width: 15, height: 15 }} aria-hidden="true" />
+          <select className="input" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)} aria-label={t('Group by')}>
+            {(['person', 'category', 'milestone'] as const).map((g) => (
+              <option key={g} value={g}>{g === 'person' ? t('By person') : g === 'category' ? t('By category') : t('By milestone')}</option>
+            ))}
+          </select>
+        </label>
+        <div className="pane-manage">
+          {!archived && (
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManaging(true)}>
+              <Tags style={{ width: 15, height: 15 }} />{t('Categories')}
             </button>
-          ))}
-        </div>
-        {!archived && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManaging(true)}>
-            <Tags style={{ width: 15, height: 15 }} />{t('Categories')}
+          )}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManagingMs(true)}>
+            <Flag style={{ width: 15, height: 15 }} />{t('Milestones')}
           </button>
-        )}
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManagingMs(true)}>
-          <Flag style={{ width: 15, height: 15 }} />{t('Milestones')}
-        </button>
+        </div>
       </div>
 
       {!sync.loaded && (

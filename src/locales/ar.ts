@@ -147,7 +147,7 @@ const ar: Record<keyof typeof en, string> = {
   "Remove {{name}}": "إزالة {{name}}",
   "Attach photos or files": "إرفاق صور أو ملفات",
   "Mention someone": "الإشارة إلى زميل",
-  "Write a message… type @ to mention someone": "اكتب رسالة… واكتب @ للإشارة إلى زميل",
+  "Write a message (@ to mention)": "اكتب رسالتك (@ للإشارة إلى زميل)",
   "Message": "الرسالة",
   "Save": "حفظ",
   "Send": "إرسال",
